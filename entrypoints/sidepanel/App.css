@@ -1,9 +1,16 @@
 .sidepanel-app {
-  min-height: 100%;
+  min-height: 100vh;
+  height: 100vh;
   padding: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.masthead-copy {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
 }
 
 .stats-row {
@@ -21,9 +28,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0.6rem;
-  border-bottom: 1px solid var(--border);
+  gap: 0.8rem;
+  padding: 0.9rem 0.75rem 0.15rem;
   flex-shrink: 0;
 }
 
@@ -35,9 +41,21 @@
   color: var(--accent);
 }
 
+.masthead-page {
+  font-size: 1rem;
+  line-height: 1.15;
+  color: var(--text-primary);
+}
+
+.masthead-detail {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
 .masthead-actions {
   display: flex;
-  gap: 0.3rem;
+  gap: 0.45rem;
   align-items: center;
 }
 
@@ -51,21 +69,35 @@
   flex-direction: column;
   flex: 1;
   overflow: hidden;
+  gap: 0.35rem;
 }
 
 .tab-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
   flex-shrink: 0;
-  border-radius: 0;
-  border-bottom: 1px solid var(--border);
-  padding: 0.3rem 0.6rem;
+  padding: 0 0.75rem;
+}
+
+.tab-trigger {
+  width: 100%;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.tab-trigger[data-state='active'] {
+  border-color: rgba(104, 196, 160, 0.42);
+  background: rgba(104, 196, 160, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(104, 196, 160, 0.1);
 }
 
 .tab-content {
   flex: 1;
   overflow-y: auto;
-  padding: 0.6rem;
+  padding: 0.35rem 0.75rem 0.75rem;
   display: grid;
-  gap: 0.6rem;
+  gap: 0.75rem;
   align-content: start;
 }
 
@@ -86,18 +118,29 @@
 }
 
 .status-bar span {
-  color: var(--accent-soft);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Folder name inline input in Prompts heading */
-.folder-inline {
-  width: 9rem;
-  height: 1.7rem;
-  font-size: 0.75rem;
-  padding: 0 0.5rem;
+/* Status-bar notice type colors */
+.status-bar .notice-info    { color: var(--muted-foreground); }
+.status-bar .notice-success { color: var(--accent-soft, oklch(62% 0.14 160)); }
+.status-bar .notice-error   { color: #f87171; }
+.status-bar .notice-warn    { color: #fbbf24; }
+
+/* Folder card — standalone card between Prompts and Queue */
+.folder-card {
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.4rem;
+  border-radius: 6px;
+}
+
+.refresh-button {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
 }
 
 /* State badge in Queue heading */
@@ -116,7 +159,7 @@
 
 .control-layout {
   display: grid;
-  gap: 0.6rem;
+  gap: 0.75rem;
   grid-template-columns: 1fr;
 }
 
@@ -124,14 +167,14 @@
 .control-sidebar,
 .section-stack {
   display: grid;
-  gap: 0.6rem;
+  gap: 0.75rem;
 }
 
 .section-heading {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
+  align-items: flex-start;
+  gap: 0.75rem;
   flex-wrap: wrap;
 }
 
@@ -139,15 +182,21 @@
 .heading-actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
   flex-wrap: wrap;
 }
 
 /* Queue start/stop/clear row in the sidebar */
 .queue-controls {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.queue-timer {
+  margin: -0.1rem 0 0;
+  font-size: 0.78rem;
+  color: var(--accent-soft);
 }
 
 .small-copy {
@@ -157,21 +206,18 @@
 .mode-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.4rem;
+  gap: 0.5rem;
 }
 
-.mode-button {
-  padding: 0.45rem 0.6rem;
-  text-align: left;
-  font-size: 0.82rem;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
+.mode-toggle {
+  min-height: 2.6rem;
+  justify-content: center;
 }
 
-.mode-button.active {
-  background: rgba(42, 209, 139, 0.14);
-  border-color: rgba(42, 209, 139, 0.38);
+.mode-toggle.is-active {
+  border-color: rgba(104, 196, 160, 0.46);
+  background: rgba(104, 196, 160, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(104, 196, 160, 0.12);
 }
 
 .dual-grid,
@@ -480,10 +526,17 @@
 .qr.failed .qr-status { color: #f87171; }
 
 .qr-actions {
-  width: 5.5rem;
+  width: 8.2rem;
   text-align: right;
   white-space: nowrap;
   padding: 0.1rem 0 0.1rem 0.2rem;
+}
+
+.qr-actions-group {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  flex-wrap: wrap;
 }
 
 button.tiny {
@@ -491,6 +544,16 @@ button.tiny {
   padding: 0.1rem 0.4rem;
   height: auto;
   line-height: 1.4;
+}
+
+button.danger-tiny {
+  border-color: rgba(248, 113, 113, 0.34);
+  color: #fca5a5;
+}
+
+button.danger-tiny:hover {
+  border-color: rgba(248, 113, 113, 0.55);
+  background: rgba(248, 113, 113, 0.08);
 }
 
 /* Prompt map — frame + prompt + duration per row */
@@ -646,9 +709,82 @@ button.tiny {
 }
 
 @media (max-width: 720px) {
-  .masthead,
-  .mode-grid {
-    grid-template-columns: 1fr;
-    flex-direction: column;
+  .masthead {
+    align-items: stretch;
+    padding-top: 0.8rem;
   }
+
+  .masthead-actions {
+    justify-content: flex-end;
+  }
+
+  .settings-group-grid.cols-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .tab-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Settings tab grouped sections */
+.settings-group {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.settings-group-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted-foreground);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.25rem;
+  margin: 0;
+}
+
+.settings-group-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+
+.settings-group-grid.cols-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.toggle-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.95rem 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.toggle-row input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.toggle-row p {
+  margin: 0.2rem 0 0;
+}
+
+/* Override ALL-CAPS from shadcn label utilities */
+.field-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  text-transform: none;
+  letter-spacing: normal;
+  display: block;
+  margin-bottom: 0.2rem;
 }

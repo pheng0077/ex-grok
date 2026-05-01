@@ -1,5 +1,6 @@
 import { type DragEvent as ReactDragEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { RefreshCw } from 'lucide-react';
 import { parsePromptGroups } from '@/features/prompts/parsePromptGroups';
 import {
   storeAttachmentPayloads,
@@ -20,6 +21,7 @@ import {
   forceStopQueue,
   getRuntimeState,
   openOptionsPage,
+  removeQueueJob,
   retryJob,
   rerunJob,
   startQueue,
@@ -41,6 +43,21 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import './App.css';
 
 type PanelTab = 'control' | 'settings' | 'logs';
+
+const TAB_META: Record<PanelTab, { title: string; detail: string }> = {
+  control: {
+    title: 'Control',
+    detail: 'Build batches, watch queue state, and run jobs.',
+  },
+  settings: {
+    title: 'Settings',
+    detail: 'Tune defaults, timing, and output behavior.',
+  },
+  logs: {
+    title: 'Debug Logs',
+    detail: 'Review runtime activity, warnings, and failures.',
+  },
+};
 
 type SelectedAttachment = {
   file: File;
@@ -81,6 +98,8 @@ function App() {
   const [perPromptDurations, setPerPromptDurations] = useState<Record<number, '6s' | '10s'>>({});
   const [isBusy, setIsBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeType, setNoticeType] = useState<'info' | 'success' | 'warn' | 'error'>('info');
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
   // dragInsertAt tracks where the insertion line should appear during reorder
   const [dragInsertAt, setDragInsertAt] = useState<{ idx: number; side: 'before' | 'after' } | null>(null);
   const [dragOverEmpty, setDragOverEmpty] = useState(false);
@@ -111,6 +130,21 @@ function App() {
       port.disconnect();
     };
   }, []);
+
+  useEffect(() => {
+    if (!state?.nextRunAt) {
+      return;
+    }
+
+    setCountdownNow(Date.now());
+    const intervalId = window.setInterval(() => {
+      setCountdownNow(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [state?.nextRunAt]);
 
   async function refresh() {
     const nextState = await getRuntimeState();
@@ -223,6 +257,7 @@ function App() {
           ? error.message
           : 'Failed to read dropped image files.',
       );
+      setNoticeType('error');
     }
   }
 
@@ -231,11 +266,13 @@ function App() {
 
     if (!prompts.length) {
       setNotice('Add at least one prompt group separated by a blank line.');
+      setNoticeType('warn');
       return;
     }
 
     if (mode === 'frame-to-video' && !attachments.some((a) => a !== null)) {
       setNotice('Frame-to-video mode requires at least one image.');
+      setNoticeType('warn');
       return;
     }
 
@@ -249,6 +286,7 @@ function App() {
         setNotice(
           `⚠ ${missingSlots.length} prompt${missingSlots.length === 1 ? '' : 's'} ${missingSlots.length === 1 ? 'has' : 'have'} no image assigned (slot${missingSlots.length === 1 ? '' : 's'} ${missingSlots.join(', ')}). Fill the empty slot${missingSlots.length === 1 ? '' : 's'} or switch to “Use start frame only”.`,
         );
+        setNoticeType('warn');
         return;
       }
     }
@@ -289,12 +327,14 @@ function App() {
       setNotice(
         `Added ${drafts.length} prompt group${drafts.length === 1 ? '' : 's'} to the queue.`,
       );
+      setNoticeType('success');
     } catch (error) {
       setNotice(
         error instanceof Error
           ? error.message
           : 'Failed to queue the current prompts.',
       );
+      setNoticeType('error');
     } finally {
       setIsBusy(false);
     }
@@ -324,6 +364,7 @@ function App() {
       setSettingsDraft(nextState.settings);
       setFolderName(nextState.settings.outputFolder);
       setNotice('Settings saved to extension storage.');
+      setNoticeType('success');
     } finally {
       setIsBusy(false);
     }
@@ -333,6 +374,7 @@ function App() {
     const nextState = await clearQueue();
     setState(nextState);
     setNotice('Queue cleared.');
+    setNoticeType('info');
   }
 
   async function stopQueue() {
@@ -340,8 +382,10 @@ function App() {
       const nextState = await forceStopQueue();
       setState(nextState);
       setNotice('Queue stopped.');
+      setNoticeType('warn');
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Stop failed.');
+      setNoticeType('error');
     }
   }
 
@@ -350,8 +394,10 @@ function App() {
       const nextState = await startQueue();
       setState(nextState);
       setNotice('Queue started.');
+      setNoticeType('info');
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Start failed.');
+      setNoticeType('error');
     }
   }
 
@@ -361,6 +407,7 @@ function App() {
       setState(nextState);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Retry failed.');
+      setNoticeType('error');
     }
   }
 
@@ -370,6 +417,19 @@ function App() {
       setState(nextState);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Re-run failed.');
+      setNoticeType('error');
+    }
+  }
+
+  async function handleRemoveJob(jobId: string) {
+    try {
+      const nextState = await removeQueueJob(jobId);
+      setState(nextState);
+      setNotice('Queue item removed.');
+      setNoticeType('info');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Remove failed.');
+      setNoticeType('error');
     }
   }
 
@@ -377,6 +437,7 @@ function App() {
     const nextState = await clearLogs();
     setState(nextState);
     setNotice('Logs cleared.');
+    setNoticeType('info');
   }
 
   const parsedPrompts = parsePromptGroups(promptText);
@@ -386,6 +447,11 @@ function App() {
   const completedJobs = queue.filter(
     (job) => job.status === 'downloaded',
   ).length;
+  const nextRunAtMs = state?.nextRunAt ? Date.parse(state.nextRunAt) : NaN;
+  const nextRunCountdown = Number.isFinite(nextRunAtMs)
+    ? Math.max(0, Math.ceil((nextRunAtMs - countdownNow) / 1000))
+    : null;
+  const activeTabMeta = TAB_META[tab];
 
   // Group queue jobs by batchId, preserving insertion order.
   const queueBatches: Array<{ batchId: string; jobs: typeof queue }> = [];
@@ -412,18 +478,30 @@ function App() {
   return (
     <main className="sidepanel-app">
       <header className="masthead">
-        <span className="masthead-title">Ex Grok</span>
+        <div className="masthead-copy">
+          <span className="masthead-title">Ex Grok</span>
+          <strong className="masthead-page">{activeTabMeta.title}</strong>
+          <p className="masthead-detail">{activeTabMeta.detail}</p>
+        </div>
         <div className="masthead-actions">
-          <Button size="sm" variant="ghost" onClick={() => void refresh()}>Refresh</Button>
-          <Button size="sm" variant="secondary" onClick={() => void openOptionsPage()}>Settings</Button>
+          <Button
+            size="icon"
+            variant="outline"
+            className="refresh-button"
+            title="Refresh panel"
+            aria-label="Refresh panel"
+            onClick={() => void refresh()}
+          >
+            <RefreshCw />
+          </Button>
         </div>
       </header>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as PanelTab)} className="tab-root">
         <TabsList className="tab-list">
-          <TabsTrigger value="control">Control</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-          <TabsTrigger value="logs">Debug Logs</TabsTrigger>
+          <TabsTrigger value="control" className="tab-trigger">Control</TabsTrigger>
+          <TabsTrigger value="settings" className="tab-trigger">Settings</TabsTrigger>
+          <TabsTrigger value="logs" className="tab-trigger">Debug Logs</TabsTrigger>
         </TabsList>
 
       <div className="tab-content">
@@ -436,15 +514,17 @@ function App() {
               </div>
               <div className="mode-grid">
                 <Button
-                  variant={mode === 'text-to-video' ? 'default' : 'outline'}
+                  variant="outline"
                   size="sm"
+                  className={`mode-toggle${mode === 'text-to-video' ? ' is-active' : ''}`}
                   onClick={() => setMode('text-to-video')}
                 >
                   Text to video
                 </Button>
                 <Button
-                  variant={mode === 'frame-to-video' ? 'default' : 'outline'}
+                  variant="outline"
                   size="sm"
+                  className={`mode-toggle${mode === 'frame-to-video' ? ' is-active' : ''}`}
                   onClick={() => setMode('frame-to-video')}
                 >
                   Frame to video
@@ -458,9 +538,9 @@ function App() {
                   <h2>Images</h2>
                   <div className="heading-actions">
                     {attachments.some((a) => a !== null) && (
-                      <Button variant="ghost" size="sm" onClick={() => setAttachments([])}>Clear all</Button>
+                      <Button variant="outline" size="sm" onClick={() => setAttachments([])}>Clear all</Button>
                     )}
-                    <Button variant="ghost" size="sm" onClick={() => void browseForAttachments()}>Browse</Button>
+                    <Button variant="outline" size="sm" onClick={() => void browseForAttachments()}>Browse</Button>
                   </div>
                 </div>
 
@@ -565,14 +645,8 @@ function App() {
               <div className="section-heading">
                 <h2>Prompts</h2>
                 <div className="heading-actions">
-                  <Input
-                    className="folder-inline"
-                    placeholder="folder name"
-                    value={folderName}
-                    onChange={(e) => setFolderName(e.target.value)}
-                  />
                   {promptText && (
-                    <Button variant="ghost" size="sm" onClick={() => setPromptText('')}>Clear</Button>
+                    <Button variant="outline" size="sm" onClick={() => setPromptText('')}>Clear</Button>
                   )}
                   <span className="muted small-copy">Blank line = new prompt</span>
                 </div>
@@ -645,19 +719,37 @@ function App() {
                 </Button>
               </div>
             </section>
+
+            {/* Folder card — between Prompts and Queue sidebar */}
+            <section className="surface folder-card">
+              <span className="field-label">Save to folder</span>
+              <Input
+                placeholder="folder name"
+                value={folderName}
+                onChange={(e) => setFolderName(e.target.value)}
+              />
+            </section>
           </div>
 
           <aside className="control-sidebar">
             <section className="surface section-stack">
               <div className="section-heading">
                 <h2>Queue</h2>
-                <Badge variant={state?.runState === 'running' ? 'default' : state?.runState === 'completed' ? 'secondary' : 'outline'} className={`state-badge state-${state?.runState ?? 'idle'}`}>{state?.runState ?? 'idle'}</Badge>
+                <Badge variant="outline" className={`state-badge state-${state?.runState ?? 'idle'}`}>{state?.runState ?? 'idle'}</Badge>
               </div>
 
               <div className="stats-row">
                 <span><strong>{queuedJobs}</strong> queued</span>
                 <span><strong>{completedJobs}</strong> done</span>
               </div>
+
+              {state?.runState === 'queued' && nextRunCountdown !== null ? (
+                <p className="queue-timer">
+                  {nextRunCountdown > 0
+                    ? `Next job starts in ${nextRunCountdown}s`
+                    : 'Starting next job...'}
+                </p>
+              ) : null}
 
               {queue.length ? (
                 <div className="batch-list">
@@ -687,10 +779,15 @@ function App() {
                                   : job.status}
                               </td>
                               <td className="qr-actions">
-                                {job.status === 'failed' ? (
-                                  <Button variant="ghost" size="sm" className="tiny" onClick={() => void handleRetry(job.id)}>Retry</Button>
-                                ) : null}
-                                <Button variant="ghost" size="sm" className="tiny" onClick={() => void handleRerun(job.id)}>Re-run</Button>
+                                <div className="qr-actions-group">
+                                  {job.status === 'failed' ? (
+                                    <Button variant="outline" size="sm" className="tiny" onClick={() => void handleRetry(job.id)}>Retry</Button>
+                                  ) : null}
+                                  <Button variant="outline" size="sm" className="tiny" onClick={() => void handleRerun(job.id)}>Re-run</Button>
+                                  {job.status !== 'running' ? (
+                                    <Button variant="outline" size="sm" className="tiny danger-tiny" onClick={() => void handleRemoveJob(job.id)}>Remove</Button>
+                                  ) : null}
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -711,9 +808,9 @@ function App() {
                   <Button size="sm" onClick={() => void handleStartQueue()}>Start Queue</Button>
                 ) : null}
                 {state?.runState === 'running' ? (
-                  <Button size="sm" variant="secondary" onClick={() => void stopQueue()}>Stop All</Button>
+                  <Button size="sm" variant="destructive" onClick={() => void stopQueue()}>Stop All</Button>
                 ) : null}
-                <Button size="sm" variant="ghost" onClick={() => void wipeQueue()}>Clear</Button>
+                <Button size="sm" variant="outline" disabled={state?.runState === 'running'} onClick={() => void wipeQueue()}>Clear</Button>
               </div>
             </section>
           </aside>
@@ -721,139 +818,153 @@ function App() {
       ) : null}
 
       {tab === 'settings' && settingsDraft ? (
-        <section className="surface settings-grid">
-          <label className="field-stack">
-            <span className="field-label">Default mode</span>
-            <Select
-              value={settingsDraft.defaultMode}
-              onValueChange={(v) => setSettingsDraft({ ...settingsDraft, defaultMode: v as GenerationMode })}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="text-to-video">Text to video</SelectItem>
-                <SelectItem value="frame-to-video">Frame to video</SelectItem>
-              </SelectContent>
-            </Select>
-          </label>
+        <section className="surface section-stack">
+          <div className="settings-group">
+            <p className="settings-group-title">Video</p>
+            <div className="settings-group-grid">
+              <label className="field-stack">
+                <span className="field-label">Default mode</span>
+                <Select
+                  value={settingsDraft.defaultMode}
+                  onValueChange={(v) => setSettingsDraft({ ...settingsDraft, defaultMode: v as GenerationMode })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="text-to-video">Text to video</SelectItem>
+                    <SelectItem value="frame-to-video">Frame to video</SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
 
-          <label className="field-stack">
-            <span className="field-label">Default duration</span>
-            <Select
-              value={settingsDraft.videoDuration}
-              onValueChange={(v) => setSettingsDraft({ ...settingsDraft, videoDuration: v as AutomationSettings['videoDuration'] })}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="6s">6 seconds</SelectItem>
-                <SelectItem value="10s">10 seconds</SelectItem>
-              </SelectContent>
-            </Select>
-          </label>
+              <label className="field-stack">
+                <span className="field-label">Default duration</span>
+                <Select
+                  value={settingsDraft.videoDuration}
+                  onValueChange={(v) => setSettingsDraft({ ...settingsDraft, videoDuration: v as AutomationSettings['videoDuration'] })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="6s">6 seconds</SelectItem>
+                    <SelectItem value="10s">10 seconds</SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
 
-          <label className="field-stack">
-            <span className="field-label">Aspect ratio</span>
-            <Select
-              value={settingsDraft.aspectRatio}
-              onValueChange={(v) => setSettingsDraft({ ...settingsDraft, aspectRatio: v as AutomationSettings['aspectRatio'] })}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="16:9">16:9 Widescreen</SelectItem>
-                <SelectItem value="9:16">9:16 Vertical</SelectItem>
-                <SelectItem value="1:1">1:1 Square</SelectItem>
-                <SelectItem value="3:2">3:2 Wide</SelectItem>
-                <SelectItem value="2:3">2:3 Tall</SelectItem>
-              </SelectContent>
-            </Select>
-          </label>
+              <label className="field-stack">
+                <span className="field-label">Aspect ratio</span>
+                <Select
+                  value={settingsDraft.aspectRatio}
+                  onValueChange={(v) => setSettingsDraft({ ...settingsDraft, aspectRatio: v as AutomationSettings['aspectRatio'] })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="16:9">16:9 Widescreen</SelectItem>
+                    <SelectItem value="9:16">9:16 Vertical</SelectItem>
+                    <SelectItem value="1:1">1:1 Square</SelectItem>
+                    <SelectItem value="3:2">3:2 Wide</SelectItem>
+                    <SelectItem value="2:3">2:3 Tall</SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
 
-          <label className="field-stack">
-            <span className="field-label">Video quality</span>
-            <Select
-              value={settingsDraft.imageQuality}
-              onValueChange={(v) => setSettingsDraft({ ...settingsDraft, imageQuality: v as AutomationSettings['imageQuality'] })}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="480p">480p</SelectItem>
-                <SelectItem value="720p">720p</SelectItem>
-              </SelectContent>
-            </Select>
-          </label>
-
-          <label className="field-stack">
-            <span className="field-label">Image processing mode</span>
-            <Select
-              value={settingsDraft.imageProcessingMode}
-              onValueChange={(v) => setSettingsDraft({ ...settingsDraft, imageProcessingMode: v as AutomationSettings['imageProcessingMode'] })}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="start-frame-only">Use start frame only</SelectItem>
-                <SelectItem value="pair-each-image">Pair each image with every prompt</SelectItem>
-              </SelectContent>
-            </Select>
-          </label>
-
-          <label className="field-stack">
-            <span className="field-label">Retry count</span>
-            <Input
-              min={1}
-              type="number"
-              value={settingsDraft.maxRetries}
-              onChange={(event) => setSettingsDraft({ ...settingsDraft, maxRetries: Number(event.target.value) })}
-            />
-          </label>
-
-          <label className="field-stack">
-            <span className="field-label">Delay min (seconds)</span>
-            <Input
-              min={0}
-              type="number"
-              value={settingsDraft.delayRange.minSeconds}
-              onChange={(event) => setSettingsDraft({ ...settingsDraft, delayRange: { ...settingsDraft.delayRange, minSeconds: Number(event.target.value) } })}
-            />
-          </label>
-
-          <label className="field-stack">
-            <span className="field-label">Delay max (seconds)</span>
-            <Input
-              min={settingsDraft.delayRange.minSeconds}
-              type="number"
-              value={settingsDraft.delayRange.maxSeconds}
-              onChange={(event) => setSettingsDraft({ ...settingsDraft, delayRange: { ...settingsDraft.delayRange, maxSeconds: Number(event.target.value) } })}
-            />
-          </label>
-
-          <label className="field-stack settings-span">
-            <span className="field-label">Default folder name</span>
-            <Input
-              value={settingsDraft.outputFolder}
-              onChange={(event) => setSettingsDraft({ ...settingsDraft, outputFolder: event.target.value })}
-            />
-          </label>
-
-          <label className="toggle-row settings-span">
-            <input
-              checked={settingsDraft.autoRename}
-              type="checkbox"
-              onChange={(event) =>
-                setSettingsDraft({
-                  ...settingsDraft,
-                  autoRename: event.target.checked,
-                })
-              }
-            />
-            <div>
-              <strong>Auto rename downloaded files</strong>
-              <p className="muted">Keeps the eventual downloads pipeline deterministic.</p>
+              <label className="field-stack">
+                <span className="field-label">Video quality</span>
+                <Select
+                  value={settingsDraft.imageQuality}
+                  onValueChange={(v) => setSettingsDraft({ ...settingsDraft, imageQuality: v as AutomationSettings['imageQuality'] })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="480p">480p</SelectItem>
+                    <SelectItem value="720p">720p</SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
             </div>
-          </label>
+          </div>
 
-          <div className="button-row settings-span">
+          <div className="settings-group">
+            <p className="settings-group-title">Processing</p>
+            <label className="field-stack">
+              <span className="field-label">Image processing mode</span>
+              <Select
+                value={settingsDraft.imageProcessingMode}
+                onValueChange={(v) => setSettingsDraft({ ...settingsDraft, imageProcessingMode: v as AutomationSettings['imageProcessingMode'] })}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="start-frame-only">Use start frame only</SelectItem>
+                  <SelectItem value="pair-each-image">Pair each image with every prompt</SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
+          </div>
+
+          <div className="settings-group">
+            <p className="settings-group-title">Timing</p>
+            <div className="settings-group-grid cols-3">
+              <label className="field-stack">
+                <span className="field-label">Delay min (s)</span>
+                <Input
+                  min={0}
+                  type="number"
+                  value={settingsDraft.delayRange.minSeconds}
+                  onChange={(event) => setSettingsDraft({ ...settingsDraft, delayRange: { ...settingsDraft.delayRange, minSeconds: Number(event.target.value) } })}
+                />
+              </label>
+              <label className="field-stack">
+                <span className="field-label">Delay max (s)</span>
+                <Input
+                  min={settingsDraft.delayRange.minSeconds}
+                  type="number"
+                  value={settingsDraft.delayRange.maxSeconds}
+                  onChange={(event) => setSettingsDraft({ ...settingsDraft, delayRange: { ...settingsDraft.delayRange, maxSeconds: Number(event.target.value) } })}
+                />
+              </label>
+              <label className="field-stack">
+                <span className="field-label">Max retries</span>
+                <Input
+                  min={1}
+                  type="number"
+                  value={settingsDraft.maxRetries}
+                  onChange={(event) => setSettingsDraft({ ...settingsDraft, maxRetries: Number(event.target.value) })}
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="settings-group">
+            <p className="settings-group-title">Output</p>
+            <label className="field-stack">
+              <span className="field-label">Default folder name</span>
+              <Input
+                value={settingsDraft.outputFolder}
+                onChange={(event) => setSettingsDraft({ ...settingsDraft, outputFolder: event.target.value })}
+              />
+            </label>
+            <label className="toggle-row">
+              <input
+                checked={settingsDraft.autoRename}
+                type="checkbox"
+                onChange={(event) =>
+                  setSettingsDraft({
+                    ...settingsDraft,
+                    autoRename: event.target.checked,
+                  })
+                }
+              />
+              <div>
+                <strong>Auto rename downloaded files</strong>
+                <p className="muted">Keeps the eventual downloads pipeline deterministic.</p>
+              </div>
+            </label>
+          </div>
+
+          <div className="button-row">
             <Button disabled={isBusy} onClick={() => void saveSettings()}>
               {isBusy ? 'Saving...' : 'Save settings'}
             </Button>
+            <Button variant="outline" size="sm" onClick={() => void openOptionsPage()}>Open options ↗</Button>
           </div>
         </section>
       ) : null}
@@ -862,7 +973,7 @@ function App() {
         <section className="surface section-stack">
           <div className="section-heading">
             <h2>Debug logs</h2>
-            <Button variant="ghost" size="sm" onClick={() => void wipeLogs()}>Clear logs</Button>
+            <Button variant="outline" size="sm" onClick={() => void wipeLogs()}>Clear logs</Button>
           </div>
 
           {state?.logs.length ? (
@@ -889,6 +1000,7 @@ function App() {
           {notice ? (
             <motion.span
               key="notice"
+              className={`notice-${noticeType}`}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}

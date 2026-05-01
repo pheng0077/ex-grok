@@ -27,6 +27,7 @@ export function createDefaultState(): AppState {
     logs: [],
     runState: 'idle',
     activeJobId: null,
+    nextRunAt: null,
     grokPage: null,
     updatedAt: new Date().toISOString(),
   };

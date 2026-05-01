@@ -51,6 +51,10 @@ export async function rerunJob(jobId: string): Promise<AppState> {
   return sendMessage({ type: 'job/rerun', payload: { jobId } });
 }
 
+export async function removeQueueJob(jobId: string): Promise<AppState> {
+  return sendMessage({ type: 'job/remove', payload: { jobId } });
+}
+
 export function subscribeToRuntimeState(
   listener: (state: AppState) => void,
 ): () => void {

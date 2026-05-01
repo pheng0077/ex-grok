@@ -19,9 +19,10 @@ const DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes — video files can be l
 
 let queueRunnerPromise: Promise<void> | null = null;
 let forceStopRequested = false;
-// When true the queue runner will not restart automatically (user pressed Stop All).
-// Must be cleared explicitly via queue/start.
-let isQueuePaused = false;
+// When true the queue runner will not restart automatically.
+// Defaults to true — user must always click Start Queue.
+// Cleared only by queue/start. Set by queue/force-stop, panel close, and queue drain.
+let isQueuePaused = true;
 let rerunJobId: string | null = null;
 let pendingDownload:
   | {
@@ -177,7 +178,14 @@ async function bootstrapBackground(): Promise<void> {
     appendLog(state, 'info', 'Background worker initialized for grok.com.'),
   );
 
-  void ensureQueueRunner();
+  // Only resume automatically if the SW was restarted mid-run (e.g. Chrome
+  // killed the worker while the queue was actively running). A fresh enqueue
+  // always requires the user to press Start Queue.
+  const resumeState = await getAppState();
+  if (resumeState.runState === 'running' || resumeState.runState === 'queued') {
+    isQueuePaused = false;
+    void ensureQueueRunner();
+  }
 }
 
 async function handleAppMessage(message: AppMessage): Promise<RuntimeReply> {
@@ -232,6 +240,7 @@ async function handleMessage(message: AppMessage): Promise<RuntimeReply> {
             queue: [],
             activeJobId: null,
             runState: 'idle',
+            nextRunAt: null,
           },
           'info',
           'Queue cleared from the control surface.',
@@ -255,7 +264,7 @@ async function handleMessage(message: AppMessage): Promise<RuntimeReply> {
       void sendAbortToGrokTab();
       const nextState = await updateAppState((state) =>
         appendLog(
-          { ...state, runState: 'paused' },
+          { ...state, runState: 'paused', nextRunAt: null },
           'warn',
           'Queue paused by user.',
         ),
@@ -268,7 +277,11 @@ async function handleMessage(message: AppMessage): Promise<RuntimeReply> {
       const startState = await updateAppState((state) => {
         const hasQueued = state.queue.some((j) => j.status === 'queued');
         return appendLog(
-          { ...state, runState: hasQueued ? 'queued' : state.runState },
+          {
+            ...state,
+            runState: hasQueued ? 'queued' : state.runState,
+            nextRunAt: null,
+          },
           'info',
           'Queue started by user.',
         );
@@ -291,6 +304,7 @@ async function handleMessage(message: AppMessage): Promise<RuntimeReply> {
                 : j,
             ),
             runState: 'queued',
+            nextRunAt: null,
           },
           'info',
           `Retrying prompt ${job.promptIndex + 1}, output ${job.outputIndex}.`,
@@ -322,12 +336,53 @@ async function handleMessage(message: AppMessage): Promise<RuntimeReply> {
                 : j,
             ),
             runState: 'queued',
+            nextRunAt: null,
           },
           'info',
           `Re-run queued for prompt ${job.promptIndex + 1}, output ${job.outputIndex}.`,
         );
       });
       if (!isQueuePaused) void ensureQueueRunner();
+      return ok(nextState);
+    }
+
+    case 'job/remove': {
+      const currentState = await getAppState();
+      const job = currentState.queue.find((entry) => entry.id === message.payload.jobId);
+
+      if (!job) {
+        return ok(currentState);
+      }
+
+      if (job.status === 'running' || currentState.activeJobId === job.id) {
+        return fail(currentState, 'A running queue job cannot be removed.');
+      }
+
+      const nextQueue = currentState.queue.filter((entry) => entry.id !== job.id);
+      const nextRunState = resolveRunStateAfterQueueChange(nextQueue, currentState.runState);
+      const nextRunAt =
+        nextRunState === 'queued' && nextQueue.some((entry) => entry.status === 'queued')
+          ? currentState.nextRunAt
+          : null;
+      const nextState = await setAppState(
+        appendLog(
+          {
+            ...currentState,
+            queue: nextQueue,
+            activeJobId: null,
+            runState: nextRunState,
+            nextRunAt,
+          },
+          'info',
+          `Removed prompt ${job.promptIndex + 1}, output ${job.outputIndex} from the queue.`,
+        ),
+      );
+
+      const retainedIds = new Set(collectQueueAssetIds(nextQueue));
+      await deleteAttachmentPayloads(
+        collectAttachmentAssetIds(job.attachments).filter((assetId) => !retainedIds.has(assetId)),
+      );
+
       return ok(nextState);
     }
 
@@ -471,6 +526,17 @@ async function ensureQueueRunner(): Promise<void> {
 
 async function runQueueLoop(): Promise<void> {
   while (true) {
+    if (isQueuePaused) {
+      const pausedState = await getAppState();
+      if (pausedState.nextRunAt) {
+        await setAppState({
+          ...pausedState,
+          nextRunAt: null,
+        });
+      }
+      return;
+    }
+
     const state = await getAppState();
     const nextJob = state.queue.find((job) => job.status === 'queued');
 
@@ -484,6 +550,7 @@ async function runQueueLoop(): Promise<void> {
           ...state,
           activeJobId: null,
           runState: finalState,
+          nextRunAt: null,
         });
       }
       return;
@@ -516,12 +583,22 @@ async function runQueueLoop(): Promise<void> {
         continue;
       }
 
-      // Force stop: mark failed non-retryable and break out of the loop.
+      // Force stop: reset the active job back to queued (not failed) so the
+      // user can restart cleanly. Break out of the loop.
       if (forceStopRequested) {
         forceStopRequested = false;
-        await updateAppState((current) =>
-          markJobFailure(current, nextJob.id, message, false),
-        );
+        await updateAppState((current) => {
+          const updated = current.queue.map((j) =>
+            j.id === nextJob.id
+              ? { ...j, status: 'queued' as const, progress: undefined, lastError: undefined }
+              : j,
+          );
+          return appendLog(
+            { ...current, queue: updated, activeJobId: null, nextRunAt: null },
+            'warn',
+            `Job ${nextJob.promptIndex + 1} stopped by user — re-queued for later.`,
+          );
+        });
         await cleanupCompletedAssetPayloads();
         return;
       }
@@ -559,7 +636,13 @@ async function runQueueLoop(): Promise<void> {
       continue;
     }
 
-    await delay(getRandomDelayMs(nextState.settings.delayRange));
+    const delayMs = getRandomDelayMs(nextState.settings.delayRange);
+    await updateAppState((current) => ({
+      ...current,
+      runState: 'queued',
+      nextRunAt: new Date(Date.now() + delayMs).toISOString(),
+    }));
+    await delay(delayMs);
   }
 }
 
@@ -699,6 +782,7 @@ async function parkQueue(message: string): Promise<void> {
       ...state,
       activeJobId: null,
       runState: 'queued',
+      nextRunAt: null,
     };
 
     const latestLog = state.logs[0];
@@ -730,6 +814,7 @@ function markJobRunning(state: AppState, jobId: string): AppState {
     ),
     activeJobId: jobId,
     runState: 'running',
+    nextRunAt: null,
   };
 
   return appendLog(
@@ -763,6 +848,7 @@ function markJobDownloaded(state: AppState, jobId: string): AppState {
       queue,
       activeJobId: null,
       runState: hasQueuedJobs ? 'queued' : 'completed',
+      nextRunAt: null,
     },
     'info',
     `Download completed for prompt ${job.promptIndex + 1}, output ${job.outputIndex}.`,
@@ -798,6 +884,7 @@ function markJobFailure(
     queue,
     activeJobId: null,
     runState: hasQueuedJobs ? 'queued' : 'completed',
+    nextRunAt: null,
   };
 
   if (shouldRetry) {
@@ -947,10 +1034,26 @@ async function handlePanelClosed(): Promise<void> {
         queue: [],
         activeJobId: null,
         runState: 'idle',
+        nextRunAt: null,
       },
       'info',
       'Side panel closed — queue cleared and automation stopped.',
     ),
   );
   await deleteAttachmentPayloads(assetIds);
+}
+
+function resolveRunStateAfterQueueChange(
+  queue: QueueJob[],
+  previousRunState: AppState['runState'],
+): AppState['runState'] {
+  if (queue.some((job) => job.status === 'running')) {
+    return 'running';
+  }
+
+  if (queue.some((job) => job.status === 'queued')) {
+    return previousRunState === 'paused' ? 'paused' : 'queued';
+  }
+
+  return queue.length > 0 ? 'completed' : 'idle';
 }

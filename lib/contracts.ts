@@ -78,6 +78,7 @@ export interface AppState {
   logs: DebugLogEntry[];
   runState: RunState;
   activeJobId: string | null;
+  nextRunAt: string | null;
   grokPage: GrokPageSnapshot | null;
   updatedAt: string;
 }
@@ -94,6 +95,7 @@ export type AppMessage =
   | { type: 'job/progress'; payload: { jobId: string; progress: number } }
   | { type: 'job/retry'; payload: { jobId: string } }
   | { type: 'job/rerun'; payload: { jobId: string } }
+  | { type: 'job/remove'; payload: { jobId: string } }
   | { type: 'automation/abort' };
 
 export interface AutomationExecuteMessage {

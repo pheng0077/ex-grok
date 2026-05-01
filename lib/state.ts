@@ -98,6 +98,10 @@ function normalizeState(state?: Partial<AppState>, queueOverride?: QueueJob[]): 
     logs: state?.logs ?? base.logs,
     runState,
     activeJobId,
+    nextRunAt:
+      runState === 'queued' && queue.some((j) => j.status === 'queued')
+        ? (state?.nextRunAt ?? base.nextRunAt)
+        : null,
     grokPage: state?.grokPage ?? base.grokPage,
     updatedAt: new Date().toISOString(),
   };
