@@ -26,6 +26,7 @@ Build a clean-room Chrome extension for grok.com automation. Phase 1 is focused 
 
 - Keep the implementation clean-room. Do not copy or decompile third-party extension code.
 - Split prompt groups on blank lines, not single line breaks.
+- A bare integer on the first line of a prompt group is parsed as the prompt order/header value.
 - Keep queue execution sequential unless the user explicitly changes the product requirement.
 - Do not pass non-serializable browser objects into shared runtime state.
 - When adding Grok automation logic, isolate selectors and DOM assumptions behind small helper functions so site changes stay localized.

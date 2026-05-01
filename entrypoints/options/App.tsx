@@ -51,9 +51,14 @@ function App() {
   return (
     <main className="options-app">
       <section className="surface options-hero">
-        <div>
-          <p className="eyebrow">Settings</p>
-          <h1>Default automation profile</h1>
+        <div className="options-hero-copy">
+          <div className="options-hero-brand">
+            <img src="/icon/source.svg" alt="Ex Grok logo" className="options-brand-mark" />
+            <div>
+              <p className="eyebrow">Settings</p>
+              <h1>Default automation profile</h1>
+            </div>
+          </div>
           <p className="muted">
             These values seed the side panel when building a new batch queue.
           </p>

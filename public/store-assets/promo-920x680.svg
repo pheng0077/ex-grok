@@ -1,0 +1,39 @@
+<svg width="920" height="680" viewBox="0 0 920 680" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="920" height="680" rx="44" fill="#09100F"/>
+  <rect x="24" y="24" width="872" height="632" rx="32" fill="url(#panelGlow)" fill-opacity="0.46"/>
+  <g opacity="0.96">
+    <rect x="486" y="70" width="350" height="202" rx="28" fill="#111B19" stroke="#243735" stroke-width="2"/>
+    <rect x="522" y="112" width="178" height="18" rx="9" fill="#EDE7D9" fill-opacity="0.95"/>
+    <rect x="522" y="147" width="238" height="13" rx="6.5" fill="#809992" fill-opacity="0.46"/>
+    <rect x="522" y="181" width="144" height="28" rx="14" fill="#72E06A" fill-opacity="0.14" stroke="#72E06A" stroke-width="2"/>
+    <rect x="679" y="181" width="91" height="28" rx="14" fill="#EDE7D9" fill-opacity="0.05" stroke="#42524E" stroke-width="2"/>
+    <rect x="522" y="226" width="260" height="10" rx="5" fill="#809992" fill-opacity="0.32"/>
+  </g>
+  <g opacity="0.96">
+    <rect x="420" y="320" width="416" height="252" rx="28" fill="#111B19" stroke="#243735" stroke-width="2"/>
+    <rect x="452" y="358" width="178" height="16" rx="8" fill="#EDE7D9" fill-opacity="0.95"/>
+    <rect x="452" y="390" width="318" height="12" rx="6" fill="#809992" fill-opacity="0.36"/>
+    <rect x="452" y="426" width="332" height="12" rx="6" fill="#809992" fill-opacity="0.24"/>
+    <rect x="452" y="473" width="136" height="26" rx="13" fill="#72E06A" fill-opacity="0.14" stroke="#72E06A" stroke-width="2"/>
+    <rect x="604" y="473" width="102" height="26" rx="13" fill="#EDE7D9" fill-opacity="0.05" stroke="#42524E" stroke-width="2"/>
+  </g>
+  <g>
+    <rect x="70" y="78" width="180" height="180" rx="44" fill="#0E1514"/>
+    <rect x="73" y="81" width="174" height="174" rx="41" stroke="#DCE7E1" stroke-opacity="0.18" stroke-width="6"/>
+    <path d="M205 128C192.8 117.4 176.9 111.2 159.7 111.2C122.2 111.2 91.8 141.6 91.8 179.1C91.8 216.6 122.2 247 159.7 247C184.7 247 206.5 233.6 218.5 213.6" stroke="#72E06A" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M215.2 178.8H163" stroke="#72E06A" stroke-width="28" stroke-linecap="round"/>
+    <path d="M136.9 151.6L180.1 178.8L136.9 206V151.6Z" fill="#F4F1E8"/>
+  </g>
+  <text x="70" y="350" fill="#EDE7D9" font-size="74" font-weight="700" font-family="Avenir Next, Inter, Arial, sans-serif">Ex Grok</text>
+  <text x="70" y="404" fill="#92AAA3" font-size="28" font-weight="500" font-family="Avenir Next, Inter, Arial, sans-serif">Queue and automate Grok video workflows</text>
+  <text x="70" y="442" fill="#92AAA3" font-size="28" font-weight="500" font-family="Avenir Next, Inter, Arial, sans-serif">with a refined side panel dashboard.</text>
+  <text x="70" y="498" fill="#72E06A" font-size="24" font-weight="700" font-family="Avenir Next, Inter, Arial, sans-serif">Sequential queues</text>
+  <text x="70" y="536" fill="#72E06A" font-size="24" font-weight="700" font-family="Avenir Next, Inter, Arial, sans-serif">Prompt grouping by blank lines</text>
+  <text x="70" y="574" fill="#72E06A" font-size="24" font-weight="700" font-family="Avenir Next, Inter, Arial, sans-serif">Text-to-video and frame-to-video batching</text>
+  <defs>
+    <radialGradient id="panelGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(742 122) rotate(127.914) scale(551.421 673.192)">
+      <stop stop-color="#18352F"/>
+      <stop offset="1" stop-color="#18352F" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>

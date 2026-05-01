@@ -42,8 +42,24 @@ VS Code task:
 ## Notes
 
 - Prompt groups are separated by blank lines. Single line breaks stay within the same prompt.
+- Optional prompt order: start a prompt group with a bare integer line, then put the prompt body on the following lines.
+- Example prompt format:
+
+```text
+1
+A cinematic shot of a neon train emerging from fog.
+
+2
+A macro product animation with rain drops and high contrast light.
+```
+
 - Queue execution is intentionally sequential.
 - This project is a clean-room rebuild and should not copy code from third-party Chrome Web Store extensions.
+
+## Branding Assets
+
+- Extension icons live in `public/icon/*` with editable sources in `public/icon/source.svg` and `public/icon/source-mono.svg`.
+- Chrome Web Store promo graphics live in `public/store-assets/*`.
 
 ## Load Unpacked Extension
 

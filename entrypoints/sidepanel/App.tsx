@@ -585,10 +585,13 @@ function App() {
   return (
     <main className="sidepanel-app">
       <header className="masthead">
-        <div className="masthead-copy">
-          <span className="masthead-title">Ex Grok</span>
-          <strong className="masthead-page">{activeTabMeta.title}</strong>
-          <p className="masthead-detail">{activeTabMeta.detail}</p>
+        <div className="masthead-brand">
+          <img src="/icon/source.svg" alt="Ex Grok logo" className="brand-mark brand-mark-sidepanel" />
+          <div className="masthead-copy">
+            <span className="masthead-title">Ex Grok</span>
+            <strong className="masthead-page">{activeTabMeta.title}</strong>
+            <p className="masthead-detail">{activeTabMeta.detail}</p>
+          </div>
         </div>
         <div className="masthead-actions">
           <Button
@@ -755,21 +758,17 @@ function App() {
                   {promptText && (
                     <Button variant="outline" size="sm" onClick={() => setPromptText('')}>Clear</Button>
                   )}
-                  <button
-                    type="button"
-                    className="hint-badge cursor-default"
-                    title="Blank line = new prompt"
-                    aria-label="Blank line = new prompt"
-                    onClick={
-                      (e) => {
-                        e.preventDefault();
-                        setNotice('Separate prompt groups with a blank line. Each group will become a separate queue item.');
-                        setNoticeType('info');
-                      }}
-                    >
-                    !
-                  </button>
                 </div>
+              </div>
+
+              <div className="prompt-guide" role="note" aria-label="Prompt formatting guide">
+                <p className="prompt-guide-title">Prompt format</p>
+                <ul className="prompt-guide-list muted">
+                  <li>Blank line = new queue item.</li>
+                  <li>Single line breaks stay inside the same prompt.</li>
+                  <li>Optional custom order: put a bare number on the first line, then the prompt text.</li>
+                </ul>
+                <pre className="prompt-guide-example">1{`\n`}A cinematic shot of a neon train emerging from fog.</pre>
               </div>
 
               <label className="field-stack">

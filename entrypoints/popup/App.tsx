@@ -45,9 +45,14 @@ function App() {
   return (
     <main className="popup-app">
       <section className="surface hero-card">
-        <div>
-          <p className="eyebrow">Ex Grok</p>
-          <h1>Batch video control</h1>
+        <div className="hero-copy">
+          <div className="hero-brand">
+            <img src="/icon/source.svg" alt="Ex Grok logo" className="brand-mark brand-mark-popup" />
+            <div>
+              <p className="eyebrow">Ex Grok</p>
+              <h1>Batch video control</h1>
+            </div>
+          </div>
           <p className="muted">
             Queue text-to-video or frame-to-video runs, then hand them off to
             the side panel dashboard.
