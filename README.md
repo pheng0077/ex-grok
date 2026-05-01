@@ -1,4 +1,4 @@
-# Ex Grok
+# Ex Grok - SuperGrok Video Automation Extension
 
 Clean-room Chrome extension scaffold for batching Grok video workflows on grok.com.
 
