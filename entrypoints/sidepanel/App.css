@@ -371,15 +371,9 @@
 
 /* Queue start/stop/clear row in the sidebar */
 .queue-controls {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.queue-timer {
-  margin: -0.1rem 0 0;
-  font-size: 0.78rem;
-  color: var(--accent-soft);
 }
 
 .small-copy {
@@ -693,14 +687,30 @@
 }
 
 .qr-status {
-  width: 5rem;
+  width: 5.6rem;
   text-align: right;
   white-space: nowrap;
   padding: 0.15rem 0 0.15rem 0.3rem;
+  color: var(--muted);
+}
+
+.qr-status-copy {
+  display: grid;
+  gap: 0.05rem;
+  justify-items: end;
+}
+
+.qr-status-label {
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+.qr-status-detail {
+  font-size: 0.63rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
   color: var(--muted);
 }
 

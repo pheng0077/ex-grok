@@ -8,6 +8,7 @@ import {
 
 // Queue is persisted to storage so MV3 service worker restarts don't lose jobs.
 let _memQueue: QueueJob[] = [];
+let _memLogs: DebugLogEntry[] = [];
 
 export async function getAppState(): Promise<AppState> {
   const stored = await browser.storage.local.get(APP_STATE_STORAGE_KEY);
@@ -21,15 +22,19 @@ export async function getAppState(): Promise<AppState> {
     );
   }
 
-  return normalizeState(storedState, _memQueue);
+  return normalizeState(storedState, _memQueue, _memLogs);
 }
 
 export async function setAppState(state: AppState): Promise<AppState> {
   _memQueue = state.queue;
-  const normalized = normalizeState(state, _memQueue);
-  // Persist the full state including queue so SW restarts don't lose jobs.
+  _memLogs = state.logs;
+  const normalized = normalizeState(state, _memQueue, _memLogs);
+  // Persist queue-backed runtime state so MV3 restarts don't lose jobs.
   await browser.storage.local.set({
-    [APP_STATE_STORAGE_KEY]: normalized,
+    [APP_STATE_STORAGE_KEY]: {
+      ...normalized,
+      logs: [],
+    },
   });
   return normalized;
 }
@@ -60,9 +65,14 @@ export function appendLog(
   });
 }
 
-function normalizeState(state?: Partial<AppState>, queueOverride?: QueueJob[]): AppState {
+function normalizeState(
+  state?: Partial<AppState>,
+  queueOverride?: QueueJob[],
+  logOverride?: DebugLogEntry[],
+): AppState {
   const base = createDefaultState();
   const queue = queueOverride ?? state?.queue ?? base.queue;
+  const logs = logOverride ?? state?.logs ?? base.logs;
 
   // When injecting a fresh in-memory queue (startup / background restart),
   // derive runState + activeJobId from actual queue contents so stale
@@ -95,7 +105,7 @@ function normalizeState(state?: Partial<AppState>, queueOverride?: QueueJob[]): 
       },
     },
     queue,
-    logs: state?.logs ?? base.logs,
+    logs,
     runState,
     activeJobId,
     nextRunAt:

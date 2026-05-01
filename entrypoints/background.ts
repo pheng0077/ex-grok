@@ -19,11 +19,18 @@ const DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes — video files can be l
 
 let queueRunnerPromise: Promise<void> | null = null;
 let forceStopRequested = false;
+let restartRequested = false;
 // When true the queue runner will not restart automatically.
 // Defaults to true — user must always click Start Queue.
 // Cleared only by queue/start. Set by queue/force-stop, panel close, and queue drain.
 let isQueuePaused = true;
 let rerunJobId: string | null = null;
+let pendingQueueDelay:
+  | {
+      timer: ReturnType<typeof setTimeout>;
+      resolve: (completed: boolean) => void;
+    }
+  | null = null;
 let pendingDownload:
   | {
       jobId: string;
@@ -214,10 +221,13 @@ async function handleMessage(message: AppMessage): Promise<RuntimeReply> {
     case 'queue/enqueue': {
       const nextState = await updateAppState((state) => {
         const jobs = createJobs(message.payload.drafts);
+        const nextRunState = jobs.length
+          ? (!isQueuePaused ? 'running' : state.runState === 'paused' ? 'paused' : 'queued')
+          : state.runState;
         const queuedState: AppState = {
           ...state,
           queue: [...state.queue, ...jobs],
-          runState: jobs.length ? (isQueuePaused ? 'paused' : 'queued') : state.runState,
+          runState: nextRunState,
         };
 
         return appendLog(
@@ -252,9 +262,12 @@ async function handleMessage(message: AppMessage): Promise<RuntimeReply> {
       return ok(nextState);
     }
 
-    case 'queue/force-stop': {
+    case 'queue/force-stop':
+    case 'queue/stop': {
       forceStopRequested = true;
+      restartRequested = false;
       isQueuePaused = true;
+      cancelPendingQueueDelay(false);
       if (pendingDownload) {
         const err = new Error('Queue stopped by user.');
         (err as Error & { retryable: boolean }).retryable = false;
@@ -264,22 +277,44 @@ async function handleMessage(message: AppMessage): Promise<RuntimeReply> {
       void sendAbortToGrokTab();
       const nextState = await updateAppState((state) =>
         appendLog(
-          { ...state, runState: 'paused', nextRunAt: null },
+          {
+            ...state,
+            queue: state.queue.map((job) =>
+              job.status === 'running'
+                ? { ...job, status: 'queued' as const, progress: undefined, lastError: undefined }
+                : job,
+            ),
+            activeJobId: null,
+            runState: state.queue.some((job) => job.status === 'queued' || job.status === 'running')
+              ? 'paused'
+              : resolveTerminalRunState(state.queue),
+            nextRunAt: null,
+          },
           'warn',
-          'Queue paused by user.',
+          'Queue stopped. Pending jobs are paused.',
         ),
       );
       return ok(nextState);
     }
 
     case 'queue/start': {
+      const currentState = await getAppState();
+      if (currentState.runState === 'paused') {
+        return fail(currentState, 'Use Resume to continue a stopped queue.');
+      }
+
+      if (!currentState.queue.some((job) => job.status === 'queued')) {
+        return fail(currentState, 'There are no queued jobs to start.');
+      }
+
       isQueuePaused = false;
+      forceStopRequested = false;
+      restartRequested = false;
       const startState = await updateAppState((state) => {
-        const hasQueued = state.queue.some((j) => j.status === 'queued');
         return appendLog(
           {
             ...state,
-            runState: hasQueued ? 'queued' : state.runState,
+            runState: 'running',
             nextRunAt: null,
           },
           'info',
@@ -288,6 +323,71 @@ async function handleMessage(message: AppMessage): Promise<RuntimeReply> {
       });
       void ensureQueueRunner();
       return ok(startState);
+    }
+
+    case 'queue/resume': {
+      const currentState = await getAppState();
+      if (currentState.runState !== 'paused') {
+        return fail(currentState, 'Resume is only available after Stop All.');
+      }
+
+      if (!currentState.queue.some((job) => job.status === 'queued')) {
+        return fail(currentState, 'There are no queued jobs to resume.');
+      }
+
+      isQueuePaused = false;
+      forceStopRequested = false;
+      restartRequested = false;
+      const resumedState = await updateAppState((state) =>
+        appendLog(
+          {
+            ...state,
+            runState: 'running',
+            nextRunAt: null,
+          },
+          'info',
+          'Queue resumed by user.',
+        ),
+      );
+      void ensureQueueRunner();
+      return ok(resumedState);
+    }
+
+    case 'queue/restart': {
+      const currentState = await getAppState();
+      if (!currentState.queue.length) {
+        return fail(currentState, 'There are no jobs to restart.');
+      }
+
+      restartRequested =
+        currentState.activeJobId !== null ||
+        currentState.queue.some((job) => job.status === 'running') ||
+        pendingDownload !== null;
+      forceStopRequested = false;
+      isQueuePaused = false;
+      cancelPendingQueueDelay(false);
+      if (pendingDownload) {
+        const err = new Error('Queue restarting from the top.');
+        (err as Error & { retryable: boolean }).retryable = false;
+        pendingDownload.reject(err);
+      }
+      void sendAbortToGrokTab();
+
+      const restartedState = await updateAppState((state) =>
+        appendLog(
+          {
+            ...state,
+            queue: state.queue.map(resetJobForRestart),
+            activeJobId: null,
+            runState: 'running',
+            nextRunAt: null,
+          },
+          'info',
+          'Queue restarted from the top.',
+        ),
+      );
+      void ensureQueueRunner();
+      return ok(restartedState);
     }
 
     case 'job/retry': {
@@ -571,6 +671,19 @@ async function runQueueLoop(): Promise<void> {
 
     try {
       await executeJob(grokTab.id, nextJob, state.settings);
+
+      if (forceStopRequested) {
+        forceStopRequested = false;
+        await cleanupCompletedAssetPayloads();
+        return;
+      }
+
+      if (restartRequested) {
+        restartRequested = false;
+        await cleanupCompletedAssetPayloads();
+        continue;
+      }
+
       await updateAppState((current) => markJobDownloaded(current, nextJob.id));
     } catch (error) {
       const message =
@@ -583,22 +696,15 @@ async function runQueueLoop(): Promise<void> {
         continue;
       }
 
-      // Force stop: reset the active job back to queued (not failed) so the
-      // user can restart cleanly. Break out of the loop.
+      if (restartRequested) {
+        restartRequested = false;
+        await cleanupCompletedAssetPayloads();
+        continue;
+      }
+
+      // Stop All already moved the queue into a paused state; just exit.
       if (forceStopRequested) {
         forceStopRequested = false;
-        await updateAppState((current) => {
-          const updated = current.queue.map((j) =>
-            j.id === nextJob.id
-              ? { ...j, status: 'queued' as const, progress: undefined, lastError: undefined }
-              : j,
-          );
-          return appendLog(
-            { ...current, queue: updated, activeJobId: null, nextRunAt: null },
-            'warn',
-            `Job ${nextJob.promptIndex + 1} stopped by user — re-queued for later.`,
-          );
-        });
         await cleanupCompletedAssetPayloads();
         return;
       }
@@ -639,10 +745,14 @@ async function runQueueLoop(): Promise<void> {
     const delayMs = getRandomDelayMs(nextState.settings.delayRange);
     await updateAppState((current) => ({
       ...current,
-      runState: 'queued',
+      runState: 'running',
       nextRunAt: new Date(Date.now() + delayMs).toISOString(),
     }));
-    await delay(delayMs);
+
+    const completedDelay = await waitForQueueDelay(delayMs);
+    if (!completedDelay) {
+      continue;
+    }
   }
 }
 
@@ -781,7 +891,7 @@ async function parkQueue(message: string): Promise<void> {
     const parked: AppState = {
       ...state,
       activeJobId: null,
-      runState: 'queued',
+      runState: isQueuePaused ? 'paused' : 'running',
       nextRunAt: null,
     };
 
@@ -847,7 +957,7 @@ function markJobDownloaded(state: AppState, jobId: string): AppState {
       ...state,
       queue,
       activeJobId: null,
-      runState: hasQueuedJobs ? 'queued' : 'completed',
+      runState: hasQueuedJobs ? 'running' : 'completed',
       nextRunAt: null,
     },
     'info',
@@ -883,7 +993,7 @@ function markJobFailure(
     ...state,
     queue,
     activeJobId: null,
-    runState: hasQueuedJobs ? 'queued' : 'completed',
+    runState: hasQueuedJobs ? 'running' : 'completed',
     nextRunAt: null,
   };
 
@@ -910,6 +1020,47 @@ function getRandomDelayMs(delayRange: AppState['settings']['delayRange']): numbe
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function waitForQueueDelay(ms: number): Promise<boolean> {
+  cancelPendingQueueDelay(false);
+
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingQueueDelay = null;
+      resolve(true);
+    }, ms);
+
+    pendingQueueDelay = {
+      timer,
+      resolve,
+    };
+  });
+}
+
+function cancelPendingQueueDelay(completed: boolean): void {
+  if (!pendingQueueDelay) {
+    return;
+  }
+
+  const { timer, resolve } = pendingQueueDelay;
+  pendingQueueDelay = null;
+  clearTimeout(timer);
+  resolve(completed);
+}
+
+function resetJobForRestart(job: QueueJob): QueueJob {
+  return {
+    ...job,
+    attemptCount: 0,
+    status: 'queued',
+    lastError: undefined,
+    progress: undefined,
+  };
+}
+
+function resolveTerminalRunState(queue: QueueJob[]): AppState['runState'] {
+  return queue.length > 0 ? 'completed' : 'idle';
 }
 
 function withRetryableFlag(error: Error, retryable: boolean): Error & { retryable: boolean } {
@@ -1016,7 +1167,9 @@ async function sendAbortToGrokTab(): Promise<void> {
 async function handlePanelClosed(): Promise<void> {
   // Force stop any in-flight automation.
   forceStopRequested = true;
+  restartRequested = false;
   isQueuePaused = true;
+  cancelPendingQueueDelay(false);
   if (pendingDownload) {
     const err = new Error('Side panel closed — queue terminated.');
     (err as Error & { retryable: boolean }).retryable = false;
@@ -1027,19 +1180,14 @@ async function handlePanelClosed(): Promise<void> {
   // Clear the entire queue and release attached assets.
   const currentState = await getAppState();
   const assetIds = collectQueueAssetIds(currentState.queue);
-  await setAppState(
-    appendLog(
-      {
-        ...currentState,
-        queue: [],
-        activeJobId: null,
-        runState: 'idle',
-        nextRunAt: null,
-      },
-      'info',
-      'Side panel closed — queue cleared and automation stopped.',
-    ),
-  );
+  await setAppState({
+    ...currentState,
+    queue: [],
+    logs: [],
+    activeJobId: null,
+    runState: 'idle',
+    nextRunAt: null,
+  });
   await deleteAttachmentPayloads(assetIds);
 }
 
@@ -1055,5 +1203,5 @@ function resolveRunStateAfterQueueChange(
     return previousRunState === 'paused' ? 'paused' : 'queued';
   }
 
-  return queue.length > 0 ? 'completed' : 'idle';
+  return resolveTerminalRunState(queue);
 }

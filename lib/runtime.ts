@@ -39,7 +39,19 @@ export async function clearLogs(): Promise<AppState> {
 }
 
 export async function forceStopQueue(): Promise<AppState> {
-  return sendMessage({ type: 'queue/force-stop' });
+  return stopAllQueue();
+}
+
+export async function stopAllQueue(): Promise<AppState> {
+  return sendMessage({ type: 'queue/stop' });
+}
+
+export async function resumeQueue(): Promise<AppState> {
+  return sendMessage({ type: 'queue/resume' });
+}
+
+export async function restartQueue(): Promise<AppState> {
+  return sendMessage({ type: 'queue/restart' });
 }
 
 export async function startQueue(): Promise<AppState> {

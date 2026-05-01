@@ -12,18 +12,21 @@ import type {
   AutomationSettings,
   GenerationMode,
   ImageAttachmentMeta,
+  QueueJob,
   QueueDraft,
 } from '@/lib/contracts';
 import {
   clearLogs,
   clearQueue,
   enqueueDrafts,
-  forceStopQueue,
   getRuntimeState,
   openGrokComposerPage,
   removeQueueJob,
+  restartQueue,
+  resumeQueue,
   retryJob,
   rerunJob,
+  stopAllQueue,
   startQueue,
   subscribeToRuntimeState,
   updateSettings,
@@ -505,12 +508,46 @@ function App() {
 
   async function stopQueue() {
     try {
-      const nextState = await forceStopQueue();
+      const nextState = await stopAllQueue();
       setState(nextState);
-      setNotice('Queue stopped.');
+      setNotice('Queue stopped. Pending jobs are paused.');
       setNoticeType('warn');
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Stop failed.');
+      setNoticeType('error');
+    }
+  }
+
+  async function handleResumeQueue() {
+    if (grokGuard) {
+      await handleOpenGrokPage();
+      return;
+    }
+
+    try {
+      const nextState = await resumeQueue();
+      setState(nextState);
+      setNotice('Queue resumed.');
+      setNoticeType('info');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Resume failed.');
+      setNoticeType('error');
+    }
+  }
+
+  async function handleRestartQueue() {
+    if (grokGuard) {
+      await handleOpenGrokPage();
+      return;
+    }
+
+    try {
+      const nextState = await restartQueue();
+      setState(nextState);
+      setNotice('Queue restarted from the top.');
+      setNoticeType('info');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Restart failed.');
       setNoticeType('error');
     }
   }
@@ -597,6 +634,13 @@ function App() {
   const activeTabMeta = TAB_META[tab];
   const isActiveTabOnGrok = isGrokUrl(activeTabUrl);
   const grokGuard = resolveGrokGuardState(isActiveTabOnGrok, state);
+  const runState = state?.runState ?? 'idle';
+  const hasQueuedJobs = queue.some((job) => job.status === 'queued');
+  const nextQueuedJobId = queue.find((job) => job.status === 'queued')?.id ?? null;
+  const canStartQueue = !grokGuard && hasQueuedJobs && runState === 'queued';
+  const canStopAll = !grokGuard && runState === 'running';
+  const canResumeQueue = !grokGuard && hasQueuedJobs && runState === 'paused';
+  const canRestartQueue = !grokGuard && queue.length > 0;
 
   useEffect(() => {
     if (!grokGuard) {
@@ -972,14 +1016,6 @@ function App() {
                 <span><strong>{completedJobs}</strong> done</span>
               </div>
 
-              {state?.runState === 'queued' && nextRunCountdown !== null ? (
-                <p className="queue-timer">
-                  {nextRunCountdown > 0
-                    ? `Next job starts in ${nextRunCountdown}s`
-                    : 'Starting next job...'}
-                </p>
-              ) : null}
-
               {queue.length ? (
                 <div className="batch-list">
                   <AnimatePresence initial={false}>
@@ -1003,9 +1039,23 @@ function App() {
                               <td className="qr-idx">#{job.promptOrder ?? job.promptIndex + 1}</td>
                               <td className="qr-prompt" title={job.lastError ?? job.prompt}>{job.prompt}</td>
                               <td className="qr-status">
-                                {job.status === 'running' && job.progress != null
-                                  ? `${job.progress}%`
-                                  : job.status}
+                                {(() => {
+                                  const status = getQueueRowStatus(
+                                    job,
+                                    runState,
+                                    nextQueuedJobId,
+                                    nextRunCountdown,
+                                  );
+
+                                  return (
+                                    <div className="qr-status-copy">
+                                      <span className="qr-status-label">{status.label}</span>
+                                      {status.detail ? (
+                                        <span className="qr-status-detail">{status.detail}</span>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })()}
                               </td>
                               <td className="qr-actions">
                                 <div className="qr-actions-group">
@@ -1060,15 +1110,18 @@ function App() {
               )}
 
               <div className="queue-controls">
-                {(state?.runState === 'queued' || state?.runState === 'paused' || state?.runState === 'completed') ? (
-                  <Button size="sm" variant="default" onClick={() => void handleStartQueue()}>
-                    {grokGuard ? grokGuard.actionLabel : 'Start Queue'}
-                  </Button>
-                ) : null}
-                {state?.runState === 'running' ? (
-                  <Button size="sm" variant="destructive" onClick={() => void stopQueue()}>Stop All</Button>
-                ) : null}
-                <Button size="sm" variant="outline" disabled={state?.runState === 'running'} onClick={() => void wipeQueue()}>Clear</Button>
+                <Button size="sm" variant="default" disabled={!canStartQueue} onClick={() => void handleStartQueue()}>
+                  Start Queue
+                </Button>
+                <Button size="sm" variant="destructive" disabled={!canStopAll} onClick={() => void stopQueue()}>
+                  Stop All
+                </Button>
+                <Button size="sm" variant="outline" disabled={!canResumeQueue} onClick={() => void handleResumeQueue()}>
+                  Resume
+                </Button>
+                <Button size="sm" variant="outline" disabled={!canRestartQueue} onClick={() => void handleRestartQueue()}>
+                  Restart Queue
+                </Button>
               </div>
             </section>
           </aside>
@@ -1356,6 +1409,45 @@ function resolveGrokGuardState(
   }
 
   return null;
+}
+
+function getQueueRowStatus(
+  job: QueueJob,
+  runState: AppState['runState'],
+  nextQueuedJobId: string | null,
+  nextRunCountdown: number | null,
+): { label: string; detail?: string } {
+  if (job.status === 'running') {
+    return {
+      label: job.progress != null ? `${job.progress}%` : 'Running',
+      detail: 'in progress',
+    };
+  }
+
+  if (job.status === 'downloaded') {
+    return { label: 'Done' };
+  }
+
+  if (job.status === 'failed') {
+    return { label: 'Failed', detail: 'needs retry' };
+  }
+
+  if (runState === 'paused' && job.id === nextQueuedJobId) {
+    return { label: 'Paused', detail: 'resume to continue' };
+  }
+
+  if (runState === 'queued' && job.id === nextQueuedJobId) {
+    return { label: 'Ready', detail: 'start queue' };
+  }
+
+  if (runState === 'running' && job.id === nextQueuedJobId && nextRunCountdown !== null) {
+    return {
+      label: nextRunCountdown > 0 ? `${nextRunCountdown}s` : 'Now',
+      detail: nextRunCountdown > 0 ? 'next up' : 'starting',
+    };
+  }
+
+  return { label: 'Queued' };
 }
 
 async function pickAttachmentsFromFileSystem(): Promise<SelectedAttachment[]> {
