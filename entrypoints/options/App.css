@@ -1,0 +1,54 @@
+.options-app {
+  max-width: 960px;
+  margin: 0 auto;
+  min-height: 100%;
+  padding: 1.2rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.options-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.options-hero h1 {
+  margin: 0.3rem 0 0;
+}
+
+.options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.options-span {
+  grid-column: 1 / -1;
+}
+
+.toggle-row {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+  padding: 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.toggle-row input {
+  width: auto;
+  margin-top: 0.35rem;
+}
+
+.toggle-row p,
+.notice-copy {
+  margin: 0.25rem 0 0;
+}
+
+@media (max-width: 720px) {
+  .options-hero {
+    flex-direction: column;
+  }
+}

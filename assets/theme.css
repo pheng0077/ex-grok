@@ -1,0 +1,202 @@
+@import "tailwindcss";
+
+/* Tailwind v4 design tokens for shadcn components */
+@theme inline {
+  --color-background: oklch(14% 0.015 160);
+  --color-foreground: oklch(96% 0.01 150);
+  --color-card: oklch(16% 0.018 160);
+  --color-card-foreground: oklch(96% 0.01 150);
+  --color-popover: oklch(18% 0.02 160);
+  --color-popover-foreground: oklch(96% 0.01 150);
+  --color-primary: oklch(75% 0.18 160);
+  --color-primary-foreground: oklch(15% 0.08 160);
+  --color-secondary: oklch(24% 0.02 160);
+  --color-secondary-foreground: oklch(88% 0.01 150);
+  --color-muted: oklch(22% 0.02 160);
+  --color-muted-foreground: oklch(62% 0.015 155);
+  --color-accent: oklch(26% 0.04 160);
+  --color-accent-foreground: oklch(80% 0.15 160);
+  --color-destructive: oklch(53% 0.22 25);
+  --color-destructive-foreground: oklch(98% 0 0);
+  --color-border: oklch(32% 0.018 160);
+  --color-input: oklch(22% 0.018 160);
+  --color-ring: oklch(75% 0.18 160);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  font-family: 'Inter Tight', 'Segoe UI', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+  color: #f4f7f4;
+  background:
+    radial-gradient(circle at top, rgba(33, 198, 132, 0.18), transparent 34%),
+    linear-gradient(180deg, #0c100f 0%, #090b0b 100%);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+
+  /* Brand tokens */
+  --accent: #2ad18b;
+  --accent-soft: #7bf0bc;
+  --panel: rgba(13, 18, 17, 0.88);
+  --panel-strong: rgba(18, 26, 24, 0.96);
+  --border: rgba(129, 155, 145, 0.2);
+  --border-strong: rgba(129, 155, 145, 0.38);
+  --text-primary: #f4f7f4;
+  --muted: #9ca9a3;
+  --shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+  --radius: 0.75rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--text-primary);
+  background:
+    radial-gradient(circle at top, rgba(33, 198, 132, 0.18), transparent 34%),
+    linear-gradient(180deg, #0c100f 0%, #090b0b 100%);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 16px;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    opacity 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease;
+  background: linear-gradient(135deg, #2ad18b 0%, #2abf7c 100%);
+  color: #042217;
+  font-weight: 700;
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+button.secondary,
+button.ghost {
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+button.ghost {
+  color: var(--muted);
+}
+
+input,
+textarea,
+select {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+  outline: 0;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(42, 209, 139, 0.12);
+}
+
+textarea {
+  min-height: 180px;
+  resize: vertical;
+}
+
+a {
+  color: inherit;
+}
+
+.surface {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 1rem;
+  box-shadow: var(--shadow);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  width: fit-content;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid rgba(42, 209, 139, 0.2);
+  background: rgba(42, 209, 139, 0.1);
+  color: var(--accent-soft);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.button-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.field-stack {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.field-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.stat-card {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.9rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}

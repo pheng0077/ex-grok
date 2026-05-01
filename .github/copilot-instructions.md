@@ -1,0 +1,13 @@
+- [x] Verify that the copilot-instructions.md file in the .github directory is created. The active project root is `ex-grok`.
+- [x] Clarify Project Requirements. Use WXT + React + TypeScript for a clean-room Manifest V3 Grok automation extension, with phase 1 focused on video workflows.
+- [x] Scaffold the Project. Initialized `.` with `npm exec --yes wxt@latest -- init . --template react --pm npm`.
+- [x] Customize the Project. Replaced the starter UI with popup, side panel, options, background state, Grok page detection, shared contracts, and parser tests.
+- [x] Install Required Extensions. No additional VS Code extensions were required.
+- [x] Compile the Project. `npm install`, `npm run typecheck`, `npm test`, and `npm run build` all passed.
+- [x] Create and Run Task. `.vscode/tasks.json` contains and successfully ran the `build extension` task.
+- [ ] Launch the Project. Start `npm run dev` only after the user confirms they want the dev browser session launched.
+- [x] Ensure Documentation is Complete. `README.md` and `AGENTS.md` reflect the current scaffold and workflow.
+- Keep Grok DOM logic in `features/grok`.
+- Keep prompt grouping in `features/prompts`.
+- Keep runtime state serializable and owned by `entrypoints/background.ts`.
+- Treat blank lines as prompt separators.
