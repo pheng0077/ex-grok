@@ -758,17 +758,31 @@ function App() {
                   {promptText && (
                     <Button variant="outline" size="sm" onClick={() => setPromptText('')}>Clear</Button>
                   )}
+                  <div className="tooltip-wrap">
+                    <button
+                      type="button"
+                      className="hint-badge"
+                      aria-label="Prompt formatting help"
+                      aria-describedby="prompt-format-tooltip"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        setNotice('Blank line = new queue item. Put a bare number on the first line to set a custom prompt order.');
+                        setNoticeType('info');
+                      }}
+                    >
+                      !
+                    </button>
+                    <div id="prompt-format-tooltip" role="tooltip" className="prompt-tooltip">
+                      <p className="prompt-tooltip-title">Prompt format</p>
+                      <ul className="prompt-tooltip-list muted">
+                        <li>Blank line = new queue item.</li>
+                        <li>Single line breaks stay inside the same prompt.</li>
+                        <li>Optional custom order: put a bare number on the first line, then the prompt text.</li>
+                      </ul>
+                      <pre className="prompt-tooltip-example">1{`\n`}A cinematic shot of a neon train emerging from fog.</pre>
+                    </div>
+                  </div>
                 </div>
-              </div>
-
-              <div className="prompt-guide" role="note" aria-label="Prompt formatting guide">
-                <p className="prompt-guide-title">Prompt format</p>
-                <ul className="prompt-guide-list muted">
-                  <li>Blank line = new queue item.</li>
-                  <li>Single line breaks stay inside the same prompt.</li>
-                  <li>Optional custom order: put a bare number on the first line, then the prompt text.</li>
-                </ul>
-                <pre className="prompt-guide-example">1{`\n`}A cinematic shot of a neon train emerging from fog.</pre>
               </div>
 
               <label className="field-stack">
