@@ -1,6 +1,6 @@
 import { type DragEvent as ReactDragEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { RefreshCw } from 'lucide-react';
+import { FolderOpen, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
 import { parsePromptGroups } from '@/features/prompts/parsePromptGroups';
 import {
   storeAttachmentPayloads,
@@ -80,7 +80,21 @@ type FilePickerWindow = Window &
     showOpenFilePicker?: (
       options?: FilePickerOptions,
     ) => Promise<ReadableFileHandle[]>;
+    showDirectoryPicker?: (
+      options?: DirectoryPickerOptions,
+    ) => Promise<ReadableDirectoryHandle>;
   };
+
+type ReadableDirectoryHandle = {
+  kind: 'directory';
+  name: string;
+};
+
+type DirectoryPickerOptions = {
+  id?: string;
+  mode?: 'read' | 'readwrite';
+  startIn?: FilePickerOptions['startIn'];
+};
 
 type DataTransferItemWithFileHandle = DataTransferItem & {
   getAsFileSystemHandle?: () => Promise<ReadableFileHandle | null>;
@@ -243,6 +257,37 @@ function App() {
     }
 
     fileInputRef.current?.click();
+  }
+
+  async function browseForOutputFolder() {
+    if (!supportsDirectoryPicker()) {
+      setNotice('Directory browsing is unavailable here. Enter a folder name manually.');
+      setNoticeType('warn');
+      return;
+    }
+
+    const picker = (window as FilePickerWindow).showDirectoryPicker;
+    if (!picker) {
+      return;
+    }
+
+    try {
+      const handle = await picker({
+        id: 'selectOutputFolder',
+        startIn: 'downloads',
+        mode: 'read',
+      });
+      setFolderName(handle.name);
+      setNotice(`Using Downloads/${handle.name} for this batch.`);
+      setNoticeType('info');
+    } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
+
+      setNotice(error instanceof Error ? error.message : 'Failed to choose a folder.');
+      setNoticeType('error');
+    }
   }
 
   async function handleAttachmentDrop(event: ReactDragEvent<HTMLElement>) {
@@ -648,7 +693,14 @@ function App() {
                   {promptText && (
                     <Button variant="outline" size="sm" onClick={() => setPromptText('')}>Clear</Button>
                   )}
-                  <span className="muted small-copy">Blank line = new prompt</span>
+                  <button
+                    type="button"
+                    className="hint-badge cursor-default"
+                    title="Blank line = new prompt"
+                    aria-label="Blank line = new prompt"
+                  >
+                    !
+                  </button>
                 </div>
               </div>
 
@@ -714,7 +766,7 @@ function App() {
               ) : null}
 
               <div className="button-row">
-                <Button disabled={isBusy} onClick={() => void runBatch()}>
+                <Button variant="outline" disabled={isBusy} onClick={() => void runBatch()}>
                   {isBusy ? 'Queueing...' : 'Add to Queue'}
                 </Button>
               </div>
@@ -723,11 +775,25 @@ function App() {
             {/* Folder card — between Prompts and Queue sidebar */}
             <section className="surface folder-card">
               <span className="field-label">Save to folder</span>
-              <Input
-                placeholder="folder name"
-                value={folderName}
-                onChange={(e) => setFolderName(e.target.value)}
-              />
+              <div className="folder-input-row">
+                <Input
+                  placeholder="folder name"
+                  value={folderName}
+                  onChange={(e) => setFolderName(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="folder-browse-button"
+                  title="Pick a folder to reuse its name"
+                  aria-label="Pick a folder to reuse its name"
+                  onClick={() => void browseForOutputFolder()}
+                >
+                  <FolderOpen />
+                </Button>
+              </div>
+              <p className="field-hint">Chrome saves into Downloads/{folderName || 'folder-name'}.</p>
             </section>
           </div>
 
@@ -781,11 +847,38 @@ function App() {
                               <td className="qr-actions">
                                 <div className="qr-actions-group">
                                   {job.status === 'failed' ? (
-                                    <Button variant="outline" size="sm" className="tiny" onClick={() => void handleRetry(job.id)}>Retry</Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="tiny icon-tiny"
+                                      title="Retry failed job"
+                                      aria-label="Retry failed job"
+                                      onClick={() => void handleRetry(job.id)}
+                                    >
+                                      <RotateCcw />
+                                    </Button>
                                   ) : null}
-                                  <Button variant="outline" size="sm" className="tiny" onClick={() => void handleRerun(job.id)}>Re-run</Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="tiny icon-tiny"
+                                    title="Queue this job again"
+                                    aria-label="Queue this job again"
+                                    onClick={() => void handleRerun(job.id)}
+                                  >
+                                    <RefreshCw />
+                                  </Button>
                                   {job.status !== 'running' ? (
-                                    <Button variant="outline" size="sm" className="tiny danger-tiny" onClick={() => void handleRemoveJob(job.id)}>Remove</Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="tiny icon-tiny danger-tiny"
+                                      title="Remove job from queue"
+                                      aria-label="Remove job from queue"
+                                      onClick={() => void handleRemoveJob(job.id)}
+                                    >
+                                      <Trash2 />
+                                    </Button>
                                   ) : null}
                                 </div>
                               </td>
@@ -805,7 +898,7 @@ function App() {
 
               <div className="queue-controls">
                 {(state?.runState === 'queued' || state?.runState === 'paused' || state?.runState === 'completed') ? (
-                  <Button size="sm" onClick={() => void handleStartQueue()}>Start Queue</Button>
+                  <Button size="sm" variant="default" onClick={() => void handleStartQueue()}>Start Queue</Button>
                 ) : null}
                 {state?.runState === 'running' ? (
                   <Button size="sm" variant="destructive" onClick={() => void stopQueue()}>Stop All</Button>
@@ -845,9 +938,10 @@ function App() {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="6s">6 seconds</SelectItem>
-                    <SelectItem value="10s">10 seconds</SelectItem>
+                    <SelectItem value="10s">10 seconds (SuperGrok)</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="field-hint">10 seconds requires SuperGrok.</p>
               </label>
 
               <label className="field-stack">
@@ -876,9 +970,10 @@ function App() {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="480p">480p</SelectItem>
-                    <SelectItem value="720p">720p</SelectItem>
+                    <SelectItem value="720p">720p (SuperGrok)</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="field-hint">720p requires SuperGrok.</p>
               </label>
             </div>
           </div>
@@ -886,17 +981,18 @@ function App() {
           <div className="settings-group">
             <p className="settings-group-title">Processing</p>
             <label className="field-stack">
-              <span className="field-label">Image processing mode</span>
+              <span className="field-label">How images map to prompts</span>
               <Select
                 value={settingsDraft.imageProcessingMode}
                 onValueChange={(v) => setSettingsDraft({ ...settingsDraft, imageProcessingMode: v as AutomationSettings['imageProcessingMode'] })}
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="start-frame-only">Use start frame only</SelectItem>
-                  <SelectItem value="pair-each-image">Pair each image with every prompt</SelectItem>
+                  <SelectItem value="pair-each-image">Match image 1 to prompt 1, image 2 to prompt 2</SelectItem>
+                  <SelectItem value="start-frame-only">Reuse the first image for every prompt</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="field-hint">Use the first option to keep one opening frame across the batch. Use the second for one-to-one prompt and image pairing.</p>
             </label>
           </div>
 
@@ -1056,6 +1152,10 @@ function toVaultAttachmentInput(
 
 function supportsFileHandlePicker(): boolean {
   return typeof (window as FilePickerWindow).showOpenFilePicker === 'function';
+}
+
+function supportsDirectoryPicker(): boolean {
+  return typeof (window as FilePickerWindow).showDirectoryPicker === 'function';
 }
 
 async function pickAttachmentsFromFileSystem(): Promise<SelectedAttachment[]> {

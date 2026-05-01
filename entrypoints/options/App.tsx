@@ -109,7 +109,7 @@ function App() {
             }
           >
             <option value="480p">480p</option>
-            <option value="720p">720p</option>
+            <option value="720p">720p (SuperGrok)</option>
           </select>
         </label>
 
@@ -125,12 +125,12 @@ function App() {
             }
           >
             <option value="6s">6 seconds</option>
-            <option value="10s">10 seconds</option>
+            <option value="10s">10 seconds (SuperGrok)</option>
           </select>
         </label>
 
         <label className="field-stack">
-          <span className="field-label">Image handling</span>
+          <span className="field-label">How images map to prompts</span>
           <select
             value={settings.imageProcessingMode}
             onChange={(event) =>
@@ -141,9 +141,10 @@ function App() {
               })
             }
           >
-            <option value="start-frame-only">Use start frame only</option>
-            <option value="pair-each-image">Pair each prompt with every image</option>
+            <option value="start-frame-only">Use the first image for every prompt</option>
+            <option value="pair-each-image">Match prompt 1 to image 1, prompt 2 to image 2</option>
           </select>
+          <span className="field-hint muted">Reuse one opening frame for the whole batch, or pair prompts and images one by one.</span>
         </label>
 
         <label className="field-stack">
@@ -223,6 +224,7 @@ function App() {
               })
             }
           />
+          <span className="field-hint muted">Files are saved into Downloads/{settings.outputFolder || 'folder-name'}.</span>
         </label>
 
         <label className="toggle-row options-span">
