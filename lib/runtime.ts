@@ -86,10 +86,6 @@ export async function openDashboardPage(): Promise<void> {
   });
 }
 
-export async function openOptionsPage(): Promise<void> {
-  await browser.runtime.openOptionsPage();
-}
-
 async function sendMessage(message: AppMessage): Promise<AppState> {
   const response = (await browser.runtime.sendMessage(
     message,

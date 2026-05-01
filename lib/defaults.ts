@@ -8,7 +8,7 @@ export const DEFAULT_SETTINGS: AutomationSettings = {
   aspectRatio: '16:9',
   videoDuration: '6s',
   imageQuality: '720p',
-  imageProcessingMode: 'start-frame-only',
+  imageProcessingMode: 'pair-each-image',
   outputsPerPrompt: 1,
   outputFolder: 'grok-folder-1',
   autoRename: true,

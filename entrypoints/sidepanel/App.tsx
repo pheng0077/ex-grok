@@ -20,7 +20,6 @@ import {
   enqueueDrafts,
   forceStopQueue,
   getRuntimeState,
-  openOptionsPage,
   removeQueueJob,
   retryJob,
   rerunJob,
@@ -119,6 +118,7 @@ function App() {
   const [dragOverEmpty, setDragOverEmpty] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragSrcIdx = useRef<number | null>(null);
+  const folderPersistSeq = useRef(0);
 
   // Create object URLs for attachment thumbnails; revoke when attachments change.
   useEffect(() => {
@@ -159,6 +159,24 @@ function App() {
       window.clearInterval(intervalId);
     };
   }, [state?.nextRunAt]);
+
+  useEffect(() => {
+    if (!state) {
+      return;
+    }
+
+    if (folderName === state.settings.outputFolder) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void persistOutputFolder(folderName);
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [folderName, state]);
 
   async function refresh() {
     const nextState = await getRuntimeState();
@@ -277,7 +295,7 @@ function App() {
         startIn: 'downloads',
         mode: 'read',
       });
-      setFolderName(handle.name);
+      applyOutputFolder(handle.name);
       setNotice(`Using Downloads/${handle.name} for this batch.`);
       setNoticeType('info');
     } catch (error) {
@@ -286,6 +304,50 @@ function App() {
       }
 
       setNotice(error instanceof Error ? error.message : 'Failed to choose a folder.');
+      setNoticeType('error');
+    }
+  }
+
+  function applyOutputFolder(nextFolder: string) {
+    setFolderName(nextFolder);
+    setSettingsDraft((current) =>
+      current
+        ? {
+            ...current,
+            outputFolder: nextFolder,
+          }
+        : current,
+    );
+  }
+
+  async function persistOutputFolder(nextFolder: string) {
+    const persistSeq = ++folderPersistSeq.current;
+
+    try {
+      const nextState = await updateSettings({ outputFolder: nextFolder });
+      if (persistSeq !== folderPersistSeq.current) {
+        return;
+      }
+
+      setState(nextState);
+      setSettingsDraft((current) =>
+        current
+          ? {
+              ...current,
+              outputFolder: nextState.settings.outputFolder,
+            }
+          : nextState.settings,
+      );
+    } catch (error) {
+      if (persistSeq !== folderPersistSeq.current) {
+        return;
+      }
+
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : 'Failed to persist the output folder.',
+      );
       setNoticeType('error');
     }
   }
@@ -322,7 +384,7 @@ function App() {
     }
 
     // In pair-each-image mode, block if any prompt slot has no image.
-    const imageMode = settingsDraft?.imageProcessingMode ?? 'start-frame-only';
+    const imageMode = settingsDraft?.imageProcessingMode ?? 'pair-each-image';
     if (mode === 'frame-to-video' && imageMode === 'pair-each-image') {
       const missingSlots = prompts
         .map((_, i) => (attachments[i] == null ? i + 1 : null))
@@ -486,7 +548,7 @@ function App() {
   }
 
   const parsedPrompts = parsePromptGroups(promptText);
-  const imageMode = settingsDraft?.imageProcessingMode ?? 'start-frame-only';
+  const imageMode = settingsDraft?.imageProcessingMode ?? 'pair-each-image';
   const queue = state?.queue ?? [];
   const queuedJobs = queue.filter((job) => job.status === 'queued').length;
   const completedJobs = queue.filter(
@@ -698,7 +760,13 @@ function App() {
                     className="hint-badge cursor-default"
                     title="Blank line = new prompt"
                     aria-label="Blank line = new prompt"
-                  >
+                    onClick={
+                      (e) => {
+                        e.preventDefault();
+                        setNotice('Separate prompt groups with a blank line. Each group will become a separate queue item.');
+                        setNoticeType('info');
+                      }}
+                    >
                     !
                   </button>
                 </div>
@@ -779,7 +847,7 @@ function App() {
                 <Input
                   placeholder="folder name"
                   value={folderName}
-                  onChange={(e) => setFolderName(e.target.value)}
+                  onChange={(e) => applyOutputFolder(e.target.value)}
                 />
                 <Button
                   type="button"
@@ -941,7 +1009,6 @@ function App() {
                     <SelectItem value="10s">10 seconds (SuperGrok)</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="field-hint">10 seconds requires SuperGrok.</p>
               </label>
 
               <label className="field-stack">
@@ -973,7 +1040,6 @@ function App() {
                     <SelectItem value="720p">720p (SuperGrok)</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="field-hint">720p requires SuperGrok.</p>
               </label>
             </div>
           </div>
@@ -1035,7 +1101,7 @@ function App() {
               <span className="field-label">Default folder name</span>
               <Input
                 value={settingsDraft.outputFolder}
-                onChange={(event) => setSettingsDraft({ ...settingsDraft, outputFolder: event.target.value })}
+                onChange={(event) => applyOutputFolder(event.target.value)}
               />
             </label>
             <label className="toggle-row">
@@ -1060,7 +1126,6 @@ function App() {
             <Button disabled={isBusy} onClick={() => void saveSettings()}>
               {isBusy ? 'Saving...' : 'Save settings'}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => void openOptionsPage()}>Open options ↗</Button>
           </div>
         </section>
       ) : null}

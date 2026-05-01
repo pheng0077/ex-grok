@@ -3,7 +3,6 @@ import type { AppState } from '@/lib/contracts';
 import {
   getRuntimeState,
   openDashboardPage,
-  openOptionsPage,
   subscribeToRuntimeState,
 } from '@/lib/runtime';
 import './App.css';
@@ -81,9 +80,6 @@ function App() {
 
       <section className="button-row popup-actions">
         <button onClick={() => void openDashboardPage()}>Open dashboard</button>
-        <button className="secondary" onClick={() => void openOptionsPage()}>
-          Settings
-        </button>
         <button className="ghost" onClick={() => void openGrok()}>
           Open grok.com
         </button>
