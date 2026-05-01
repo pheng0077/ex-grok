@@ -353,43 +353,6 @@ async function handleMessage(message: AppMessage): Promise<RuntimeReply> {
       return ok(resumedState);
     }
 
-    case 'queue/restart': {
-      const currentState = await getAppState();
-      if (!currentState.queue.length) {
-        return fail(currentState, 'There are no jobs to restart.');
-      }
-
-      restartRequested =
-        currentState.activeJobId !== null ||
-        currentState.queue.some((job) => job.status === 'running') ||
-        pendingDownload !== null;
-      forceStopRequested = false;
-      isQueuePaused = false;
-      cancelPendingQueueDelay(false);
-      if (pendingDownload) {
-        const err = new Error('Queue restarting from the top.');
-        (err as Error & { retryable: boolean }).retryable = false;
-        pendingDownload.reject(err);
-      }
-      void sendAbortToGrokTab();
-
-      const restartedState = await updateAppState((state) =>
-        appendLog(
-          {
-            ...state,
-            queue: state.queue.map(resetJobForRestart),
-            activeJobId: null,
-            runState: 'running',
-            nextRunAt: null,
-          },
-          'info',
-          'Queue restarted from the top.',
-        ),
-      );
-      void ensureQueueRunner();
-      return ok(restartedState);
-    }
-
     case 'job/retry': {
       const { jobId } = message.payload;
       const nextState = await updateAppState((state) => {
@@ -403,7 +366,8 @@ async function handleMessage(message: AppMessage): Promise<RuntimeReply> {
                 ? { ...j, status: 'queued' as const, attemptCount: 0, lastError: undefined, progress: undefined }
                 : j,
             ),
-            runState: 'queued',
+            // Preserve 'running' and 'paused' — only promote idle/completed to 'queued'.
+            runState: isQueuePaused || state.runState === 'running' ? state.runState : 'queued',
             nextRunAt: null,
           },
           'info',
@@ -416,14 +380,24 @@ async function handleMessage(message: AppMessage): Promise<RuntimeReply> {
 
     case 'job/rerun': {
       const { jobId } = message.payload;
-      rerunJobId = jobId;
-      if (pendingDownload && pendingDownload.jobId === jobId) {
-        const err = new Error('Re-run requested by user.');
-        (err as Error & { retryable: boolean }).retryable = false;
-        pendingDownload.reject(err);
+      const preState = await getAppState();
+      const isActiveJob =
+        preState.activeJobId === jobId ||
+        preState.queue.some((j) => j.id === jobId && j.status === 'running');
+
+      // Only abort the in-flight automation when the requested job is the one
+      // currently executing. Aborting unconditionally would kill a different
+      // running job whenever the user re-queues a completed one.
+      if (isActiveJob) {
+        rerunJobId = jobId;
+        if (pendingDownload && pendingDownload.jobId === jobId) {
+          const err = new Error('Re-run requested by user.');
+          (err as Error & { retryable: boolean }).retryable = false;
+          pendingDownload.reject(err);
+        }
+        void sendAbortToGrokTab();
       }
-      // Signal the content script to bail out of the current in-flight automation.
-      void sendAbortToGrokTab();
+
       const nextState = await updateAppState((state) => {
         const job = state.queue.find((j) => j.id === jobId);
         if (!job) return state;
@@ -435,7 +409,8 @@ async function handleMessage(message: AppMessage): Promise<RuntimeReply> {
                 ? { ...j, status: 'queued' as const, attemptCount: 0, lastError: undefined, progress: undefined }
                 : j,
             ),
-            runState: 'queued',
+            // Preserve 'running' and 'paused' — only promote idle/completed to 'queued'.
+            runState: isQueuePaused || state.runState === 'running' ? state.runState : 'queued',
             nextRunAt: null,
           },
           'info',
@@ -461,7 +436,7 @@ async function handleMessage(message: AppMessage): Promise<RuntimeReply> {
       const nextQueue = currentState.queue.filter((entry) => entry.id !== job.id);
       const nextRunState = resolveRunStateAfterQueueChange(nextQueue, currentState.runState);
       const nextRunAt =
-        nextRunState === 'queued' && nextQueue.some((entry) => entry.status === 'queued')
+        (nextRunState === 'queued' || nextRunState === 'running') && nextQueue.some((entry) => entry.status === 'queued')
           ? currentState.nextRunAt
           : null;
       const nextState = await setAppState(
@@ -674,14 +649,7 @@ async function runQueueLoop(): Promise<void> {
 
       if (forceStopRequested) {
         forceStopRequested = false;
-        await cleanupCompletedAssetPayloads();
         return;
-      }
-
-      if (restartRequested) {
-        restartRequested = false;
-        await cleanupCompletedAssetPayloads();
-        continue;
       }
 
       await updateAppState((current) => markJobDownloaded(current, nextJob.id));
@@ -689,23 +657,26 @@ async function runQueueLoop(): Promise<void> {
       const message =
         error instanceof Error ? error.message : 'Unknown queue execution error.';
 
-      // Re-run: job was already re-queued by the job/rerun handler; just clear the flag.
+      // Re-run: job was already re-queued by the job/rerun handler.
+      // Navigate back to /imagine so the page is in a clean state for the retry.
       if (rerunJobId === nextJob.id) {
         rerunJobId = null;
-        await cleanupCompletedAssetPayloads();
-        continue;
-      }
-
-      if (restartRequested) {
-        restartRequested = false;
-        await cleanupCompletedAssetPayloads();
+        if (grokTab?.id) {
+          try {
+            const loaded = waitForTabLoaded(grokTab.id, 12000);
+            await browser.tabs.update(grokTab.id, { url: 'https://grok.com/imagine' });
+            await loaded;
+            await delay(1200);
+          } catch {
+            // Non-fatal.
+          }
+        }
         continue;
       }
 
       // Stop All already moved the queue into a paused state; just exit.
       if (forceStopRequested) {
         forceStopRequested = false;
-        await cleanupCompletedAssetPayloads();
         return;
       }
 
@@ -721,8 +692,6 @@ async function runQueueLoop(): Promise<void> {
         markJobFailure(current, nextJob.id, message, retryable),
       );
     }
-
-    await cleanupCompletedAssetPayloads();
 
     // Navigate back to /imagine after each job so the next one starts from a
     // clean page with no leftover prompt text or post-page URL.
@@ -1200,6 +1169,7 @@ function resolveRunStateAfterQueueChange(
   }
 
   if (queue.some((job) => job.status === 'queued')) {
+    if (previousRunState === 'running') return 'running';
     return previousRunState === 'paused' ? 'paused' : 'queued';
   }
 

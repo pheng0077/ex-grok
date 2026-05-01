@@ -50,10 +50,6 @@ export async function resumeQueue(): Promise<AppState> {
   return sendMessage({ type: 'queue/resume' });
 }
 
-export async function restartQueue(): Promise<AppState> {
-  return sendMessage({ type: 'queue/restart' });
-}
-
 export async function startQueue(): Promise<AppState> {
   return sendMessage({ type: 'queue/start' });
 }

@@ -42,6 +42,10 @@ const WAIT_FOR_DOWNLOAD_CONTROL_MS = 6 * 60 * 1000;
 const MIN_GENERATION_WAIT_MS = 3000;
 // How long to poll for the Submit button to become enabled after filling
 const SUBMIT_ENABLE_WAIT_MS = 4000;
+// Initial settle after dispatching file change events so Grok starts processing
+const POST_UPLOAD_SETTLE_MS = 800;
+// Max time to wait for Submit to go *disabled* after upload (confirms processing started)
+const UPLOAD_DISABLE_WAIT_MS = 3000;
 // Upload processing can keep Submit disabled for several more seconds.
 const SUBMIT_AFTER_UPLOAD_WAIT_MS = 15000;
 const SUBMIT_START_WAIT_MS = 1500;
@@ -123,8 +127,11 @@ export async function runGrokAutomation(
       if (!uploadResult.ok) {
         return uploadResult;
       }
-      // Grok disables Submit while the uploaded image is being processed.
-      // Re-poll until it is enabled again before we try to click it.
+      // Wait for Grok to register the upload and disable Submit during processing.
+      // Without this, the re-enable poll below finds Submit still enabled from the
+      // prompt-fill step and fires submit before the image is processed.
+      await waitForSubmitDisabled(document, UPLOAD_DISABLE_WAIT_MS);
+      // Then wait for Submit to re-enable (upload fully processed by Grok).
       generateControl =
         (await waitForSubmitEnabled(document, SUBMIT_AFTER_UPLOAD_WAIT_MS)) ??
         generateControl;
@@ -677,6 +684,22 @@ async function waitForSubmitEnabled(
   return null;
 }
 
+/**
+ * Poll until the Submit button is disabled (or absent). Used after dispatching
+ * file-upload events to confirm Grok has started processing the attachment and
+ * has not yet re-enabled Submit. Resolves immediately if already disabled.
+ */
+async function waitForSubmitDisabled(
+  doc: Document,
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!findEnabledSubmit(doc)) return;
+    await delay(150);
+  }
+}
+
 function findEnabledSubmit(doc: Document): HTMLElement | null {
   for (const button of doc.querySelectorAll<HTMLButtonElement>('button')) {
     if (!isVisible(button)) continue;
@@ -947,7 +970,9 @@ async function uploadAttachments(
   fileInput.files = transfer.files;
   fileInput.dispatchEvent(new Event('input', { bubbles: true }));
   fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-  await nextFrame();
+  // Give Grok's React component time to process the change event and start
+  // rendering the preview before the caller checks the Submit button state.
+  await delay(POST_UPLOAD_SETTLE_MS);
 
   return {
     ok: true,

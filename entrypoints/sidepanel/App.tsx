@@ -22,7 +22,6 @@ import {
   getRuntimeState,
   openGrokComposerPage,
   removeQueueJob,
-  restartQueue,
   resumeQueue,
   retryJob,
   rerunJob,
@@ -535,23 +534,6 @@ function App() {
     }
   }
 
-  async function handleRestartQueue() {
-    if (grokGuard) {
-      await handleOpenGrokPage();
-      return;
-    }
-
-    try {
-      const nextState = await restartQueue();
-      setState(nextState);
-      setNotice('Queue restarted from the top.');
-      setNoticeType('info');
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Restart failed.');
-      setNoticeType('error');
-    }
-  }
-
   async function handleStartQueue() {
     if (grokGuard) {
       await handleOpenGrokPage();
@@ -640,7 +622,7 @@ function App() {
   const canStartQueue = !grokGuard && hasQueuedJobs && runState === 'queued';
   const canStopAll = !grokGuard && runState === 'running';
   const canResumeQueue = !grokGuard && hasQueuedJobs && runState === 'paused';
-  const canRestartQueue = !grokGuard && queue.length > 0;
+  const canClearQueue = queue.length > 0 && runState !== 'running';
 
   useEffect(() => {
     if (!grokGuard) {
@@ -1077,6 +1059,7 @@ function App() {
                                     className="tiny icon-tiny"
                                     title="Queue this job again"
                                     aria-label="Queue this job again"
+                                    disabled={runState === 'running'}
                                     onClick={() => void handleRerun(job.id)}
                                   >
                                     <RefreshCw />
@@ -1119,8 +1102,8 @@ function App() {
                 <Button size="sm" variant="outline" disabled={!canResumeQueue} onClick={() => void handleResumeQueue()}>
                   Resume
                 </Button>
-                <Button size="sm" variant="outline" disabled={!canRestartQueue} onClick={() => void handleRestartQueue()}>
-                  Restart Queue
+                <Button size="sm" variant="destructive" disabled={!canClearQueue} onClick={() => void wipeQueue()}>
+                  Clear Queue
                 </Button>
               </div>
             </section>

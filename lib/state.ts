@@ -20,15 +20,20 @@ export async function getAppState(): Promise<AppState> {
     _memQueue = (storedState!.queue as QueueJob[]).map((job) =>
       job.status === 'running' ? { ...job, status: 'queued' as const } : job,
     );
+    // SW-restart: derive runState from recovered queue contents since persisted runState is stale.
+    return normalizeState(storedState, _memQueue, _memLogs);
   }
 
-  return normalizeState(storedState, _memQueue, _memLogs);
+  // Normal path: honor the explicit runState stored in state; merge in-memory queue via state.queue.
+  return normalizeState({ ...storedState, queue: _memQueue }, undefined, _memLogs);
 }
 
 export async function setAppState(state: AppState): Promise<AppState> {
   _memQueue = state.queue;
   _memLogs = state.logs;
-  const normalized = normalizeState(state, _memQueue, _memLogs);
+  // Do not pass queueOverride so the explicit state.runState is honored instead of being
+  // re-derived from queue job statuses on every write.
+  const normalized = normalizeState(state, undefined, _memLogs);
   // Persist queue-backed runtime state so MV3 restarts don't lose jobs.
   await browser.storage.local.set({
     [APP_STATE_STORAGE_KEY]: {
@@ -109,7 +114,7 @@ function normalizeState(
     runState,
     activeJobId,
     nextRunAt:
-      runState === 'queued' && queue.some((j) => j.status === 'queued')
+      (runState === 'queued' || runState === 'running') && queue.some((j) => j.status === 'queued')
         ? (state?.nextRunAt ?? base.nextRunAt)
         : null,
     grokPage: state?.grokPage ?? base.grokPage,

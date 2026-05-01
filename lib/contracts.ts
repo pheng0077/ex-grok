@@ -91,7 +91,6 @@ export type AppMessage =
   | { type: 'queue/start' }
   | { type: 'queue/stop' }
   | { type: 'queue/resume' }
-  | { type: 'queue/restart' }
   | { type: 'settings/update'; payload: { patch: Partial<AutomationSettings> } }
   | { type: 'logs/clear' }
   | { type: 'page/update'; payload: { snapshot: GrokPageSnapshot } }
