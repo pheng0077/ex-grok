@@ -7,6 +7,9 @@ import type {
 } from '@/lib/contracts';
 import { APP_STATE_STORAGE_KEY } from '@/lib/defaults';
 
+const GROK_COMPOSER_URL = 'https://grok.com/imagine';
+const GROK_TAB_PATTERNS = ['https://grok.com/*', 'https://*.grok.com/*'];
+
 export async function getRuntimeState(): Promise<AppState> {
   return sendMessage({ type: 'app/get-state' });
 }
@@ -84,6 +87,42 @@ export async function openDashboardPage(): Promise<void> {
   await browser.tabs.create({
     url: browser.runtime.getURL('/sidepanel.html'),
   });
+}
+
+export async function openGrokComposerPage(): Promise<void> {
+  const [activeTab] = await browser.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+  });
+
+  if (activeTab?.id && isGrokUrl(activeTab.url)) {
+    await browser.tabs.update(activeTab.id, {
+      active: true,
+      url: GROK_COMPOSER_URL,
+    });
+    return;
+  }
+
+  const existingTabs = await browser.tabs.query({ url: GROK_TAB_PATTERNS });
+  const targetTab = existingTabs[0];
+
+  if (targetTab?.id) {
+    if (typeof targetTab.windowId === 'number') {
+      await browser.windows.update(targetTab.windowId, { focused: true });
+    }
+
+    await browser.tabs.update(targetTab.id, {
+      active: true,
+      url: GROK_COMPOSER_URL,
+    });
+    return;
+  }
+
+  await browser.tabs.create({ url: GROK_COMPOSER_URL });
+}
+
+function isGrokUrl(url?: string): boolean {
+  return /^https:\/\/(?:[^/]+\.)?grok\.com(?:\/|$)/i.test(url ?? '');
 }
 
 async function sendMessage(message: AppMessage): Promise<AppState> {

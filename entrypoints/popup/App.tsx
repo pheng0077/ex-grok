@@ -3,6 +3,7 @@ import type { AppState } from '@/lib/contracts';
 import {
   getRuntimeState,
   openDashboardPage,
+  openGrokComposerPage,
   subscribeToRuntimeState,
 } from '@/lib/runtime';
 import './App.css';
@@ -30,7 +31,7 @@ function App() {
   }
 
   async function openGrok(): Promise<void> {
-    await browser.tabs.create({ url: 'https://grok.com/' });
+    await openGrokComposerPage();
   }
 
   const queue = state?.queue ?? [];

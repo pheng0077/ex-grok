@@ -88,6 +88,7 @@
   flex: 1;
   overflow: hidden;
   gap: 0.35rem;
+  position: relative;
 }
 
 .tab-list {
@@ -192,6 +193,73 @@
   display: grid;
   gap: 0.75rem;
   grid-template-columns: 1fr;
+}
+
+.grok-guard-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.9rem;
+  background: rgba(6, 10, 10, 0.68);
+  backdrop-filter: blur(10px);
+}
+
+.grok-guard-modal {
+  display: grid;
+  gap: 0.9rem;
+  width: min(100%, 28rem);
+  padding: 1rem;
+  border-color: rgba(251, 191, 36, 0.42);
+  background:
+    linear-gradient(135deg, rgba(251, 191, 36, 0.12), rgba(251, 191, 36, 0.03)),
+    rgba(12, 18, 17, 0.94);
+  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.45);
+}
+
+.grok-guard-copy {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.grok-guard-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fbbf24;
+}
+
+.grok-guard-modal h2 {
+  margin: 0;
+  font-size: 1.08rem;
+  line-height: 1.2;
+}
+
+.grok-guard-modal p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+}
+
+.grok-guard-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+@media (min-width: 960px) {
+  .grok-guard-modal {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+
+  .grok-guard-actions {
+    justify-content: flex-end;
+  }
 }
 
 .control-main,

@@ -20,6 +20,7 @@ import {
   enqueueDrafts,
   forceStopQueue,
   getRuntimeState,
+  openGrokComposerPage,
   removeQueueJob,
   retryJob,
   rerunJob,
@@ -95,6 +96,18 @@ type DirectoryPickerOptions = {
   startIn?: FilePickerOptions['startIn'];
 };
 
+type GrokGuardState = {
+  title: string;
+  detail: string;
+  actionLabel: string;
+};
+
+type ActiveBrowserTab = {
+  id?: number;
+  url?: string;
+  windowId?: number;
+};
+
 type DataTransferItemWithFileHandle = DataTransferItem & {
   getAsFileSystemHandle?: () => Promise<ReadableFileHandle | null>;
 };
@@ -112,6 +125,7 @@ function App() {
   const [isBusy, setIsBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeType, setNoticeType] = useState<'info' | 'success' | 'warn' | 'error'>('info');
+  const [activeTabUrl, setActiveTabUrl] = useState<string | null>(null);
   const [countdownNow, setCountdownNow] = useState(() => Date.now());
   // dragInsertAt tracks where the insertion line should appear during reorder
   const [dragInsertAt, setDragInsertAt] = useState<{ idx: number; side: 'before' | 'after' } | null>(null);
@@ -119,6 +133,7 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragSrcIdx = useRef<number | null>(null);
   const folderPersistSeq = useRef(0);
+  const grokGuardActionRef = useRef<HTMLButtonElement | null>(null);
 
   // Create object URLs for attachment thumbnails; revoke when attachments change.
   useEffect(() => {
@@ -179,11 +194,15 @@ function App() {
   }, [folderName, state]);
 
   async function refresh() {
-    const nextState = await getRuntimeState();
+    const [nextState, activeTab] = await Promise.all([
+      getRuntimeState(),
+      getActiveBrowserTab(),
+    ]);
     setState(nextState);
     setSettingsDraft(nextState.settings);
     setMode(nextState.settings.defaultMode);
     setFolderName(nextState.settings.outputFolder);
+    setActiveTabUrl(activeTab?.url ?? null);
   }
 
   // When adding new images, fill any null (removed) slots first, then append.
@@ -497,6 +516,11 @@ function App() {
   }
 
   async function handleStartQueue() {
+    if (grokGuard) {
+      await handleOpenGrokPage();
+      return;
+    }
+
     try {
       const nextState = await startQueue();
       setState(nextState);
@@ -504,6 +528,18 @@ function App() {
       setNoticeType('info');
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Start failed.');
+      setNoticeType('error');
+    }
+  }
+
+  async function handleOpenGrokPage() {
+    try {
+      await openGrokComposerPage();
+      setActiveTabUrl('https://grok.com/imagine');
+      setNotice('Opening the Grok composer. Wait for the prompt box to load, then start the queue.');
+      setNoticeType('warn');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Failed to open grok.com.');
       setNoticeType('error');
     }
   }
@@ -559,6 +595,22 @@ function App() {
     ? Math.max(0, Math.ceil((nextRunAtMs - countdownNow) / 1000))
     : null;
   const activeTabMeta = TAB_META[tab];
+  const isActiveTabOnGrok = isGrokUrl(activeTabUrl);
+  const grokGuard = resolveGrokGuardState(isActiveTabOnGrok, state);
+
+  useEffect(() => {
+    if (!grokGuard) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      grokGuardActionRef.current?.focus();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [grokGuard]);
 
   // Group queue jobs by batchId, preserving insertion order.
   const queueBatches: Array<{ batchId: string; jobs: typeof queue }> = [];
@@ -608,13 +660,43 @@ function App() {
       </header>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as PanelTab)} className="tab-root">
+        {grokGuard ? (
+          <div className="grok-guard-overlay" role="presentation">
+            <section
+              className="surface grok-guard-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="grok-guard-title"
+              aria-describedby="grok-guard-detail"
+            >
+              <div className="grok-guard-copy">
+                <span className="grok-guard-label">Grok Required</span>
+                <h2 id="grok-guard-title">{grokGuard.title}</h2>
+                <p id="grok-guard-detail">{grokGuard.detail}</p>
+              </div>
+              <div className="grok-guard-actions">
+                <Button
+                  ref={grokGuardActionRef}
+                  size="sm"
+                  onClick={() => void handleOpenGrokPage()}
+                >
+                  {grokGuard.actionLabel}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => void refresh()}>
+                  Refresh status
+                </Button>
+              </div>
+            </section>
+          </div>
+        ) : null}
+
         <TabsList className="tab-list">
           <TabsTrigger value="control" className="tab-trigger">Control</TabsTrigger>
           <TabsTrigger value="settings" className="tab-trigger">Settings</TabsTrigger>
           <TabsTrigger value="logs" className="tab-trigger">Debug Logs</TabsTrigger>
         </TabsList>
 
-      <div className="tab-content">
+      <div className="tab-content" aria-hidden={grokGuard ? 'true' : undefined}>
       {tab === 'control' ? (
         <section className="control-layout">
           <div className="control-main">
@@ -979,7 +1061,9 @@ function App() {
 
               <div className="queue-controls">
                 {(state?.runState === 'queued' || state?.runState === 'paused' || state?.runState === 'completed') ? (
-                  <Button size="sm" variant="default" onClick={() => void handleStartQueue()}>Start Queue</Button>
+                  <Button size="sm" variant="default" onClick={() => void handleStartQueue()}>
+                    {grokGuard ? grokGuard.actionLabel : 'Start Queue'}
+                  </Button>
                 ) : null}
                 {state?.runState === 'running' ? (
                   <Button size="sm" variant="destructive" onClick={() => void stopQueue()}>Stop All</Button>
@@ -1234,6 +1318,44 @@ function supportsFileHandlePicker(): boolean {
 
 function supportsDirectoryPicker(): boolean {
   return typeof (window as FilePickerWindow).showDirectoryPicker === 'function';
+}
+
+async function getActiveBrowserTab(): Promise<ActiveBrowserTab | null> {
+  const [activeTab] = await browser.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+  });
+
+  return (activeTab as ActiveBrowserTab | undefined) ?? null;
+}
+
+function isGrokUrl(url?: string | null): boolean {
+  return /^https:\/\/(?:[^/]+\.)?grok\.com(?:\/|$)/i.test(url ?? '');
+}
+
+function resolveGrokGuardState(
+  isActiveTabOnGrok: boolean,
+  state: AppState | null,
+): GrokGuardState | null {
+  if (!isActiveTabOnGrok) {
+    return {
+      title: 'Open grok.com before running automation.',
+      detail: 'Queue execution only runs from the Grok composer. Open the page first to avoid unknown-page errors.',
+      actionLabel: 'Go to Grok',
+    };
+  }
+
+  if (!state?.grokPage?.readyForAutomation) {
+    return {
+      title: 'Wait for the Grok composer to finish loading.',
+      detail: state?.grokPage?.authenticated
+        ? 'The active tab is on grok.com, but the prompt composer is not ready yet. Open the imagine page and wait for the prompt box.'
+        : 'The active Grok tab is not ready for automation yet. Sign in if needed, then wait for the prompt composer to appear.',
+      actionLabel: 'Open Composer',
+    };
+  }
+
+  return null;
 }
 
 async function pickAttachmentsFromFileSystem(): Promise<SelectedAttachment[]> {
