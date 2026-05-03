@@ -8,6 +8,8 @@ import {
 } from '@/lib/runtime';
 import './App.css';
 
+const EXT_VERSION = browser.runtime.getManifest().version;
+
 function App() {
   const [state, setState] = useState<AppState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,7 +52,7 @@ function App() {
           <div className="hero-brand">
             <img src="/icon/source.svg" alt="Ex Grok logo" className="brand-mark brand-mark-popup" />
             <div>
-              <p className="eyebrow">Ex Grok</p>
+              <p className="eyebrow">Ex Grok <span className="version-badge">v{EXT_VERSION}</span></p>
               <h1>Batch video control</h1>
             </div>
           </div>

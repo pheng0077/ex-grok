@@ -44,6 +44,8 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import './App.css';
 
+const EXT_VERSION = browser.runtime.getManifest().version;
+
 type PanelTab = 'control' | 'settings' | 'logs';
 
 const TAB_META: Record<PanelTab, { title: string; detail: string }> = {
@@ -666,7 +668,7 @@ function App() {
         <div className="masthead-brand">
           <img src="/icon/source.svg" alt="Ex Grok logo" className="brand-mark brand-mark-sidepanel" />
           <div className="masthead-copy">
-            <span className="masthead-title">Ex Grok</span>
+            <span className="masthead-title">Ex Grok <span className="masthead-version">v{EXT_VERSION}</span></span>
             <strong className="masthead-page">{activeTabMeta.title}</strong>
             <p className="masthead-detail">{activeTabMeta.detail}</p>
           </div>

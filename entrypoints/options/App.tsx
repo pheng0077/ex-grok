@@ -3,6 +3,8 @@ import type { AutomationSettings, GenerationMode } from '@/lib/contracts';
 import { getRuntimeState, updateSettings } from '@/lib/runtime';
 import './App.css';
 
+const EXT_VERSION = browser.runtime.getManifest().version;
+
 function App() {
   const [settings, setSettings] = useState<AutomationSettings | null>(null);
   const [saving, setSaving] = useState(false);
@@ -55,7 +57,7 @@ function App() {
           <div className="options-hero-brand">
             <img src="/icon/source.svg" alt="Ex Grok logo" className="options-brand-mark" />
             <div>
-              <p className="eyebrow">Settings</p>
+              <p className="eyebrow">Settings <span className="version-badge">v{EXT_VERSION}</span></p>
               <h1>Default automation profile</h1>
             </div>
           </div>
