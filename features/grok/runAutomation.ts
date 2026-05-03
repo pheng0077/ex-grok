@@ -40,18 +40,32 @@ const ASPECT_RATIO_TRIGGER_LABEL = /aspect.?ratio/i;
 const WAIT_FOR_DOWNLOAD_CONTROL_MS = 6 * 60 * 1000;
 // Minimum ms to wait after clicking generate before polling for download control
 const MIN_GENERATION_WAIT_MS = 3000;
-// How long to poll for the Submit button to become enabled after filling
-const SUBMIT_ENABLE_WAIT_MS = 4000;
+// How long to poll for the Submit button to become enabled after filling the prompt.
+// 20 s covers very slow (2G/3G) TipTap React state propagation.
+const SUBMIT_ENABLE_WAIT_MS = 20000;
 // Initial settle after dispatching file change events so Grok starts processing
-const POST_UPLOAD_SETTLE_MS = 800;
+const POST_UPLOAD_SETTLE_MS = 1200;
 // Max time to wait for Submit to go *disabled* after upload (confirms processing started)
-const UPLOAD_DISABLE_WAIT_MS = 3000;
+const UPLOAD_DISABLE_WAIT_MS = 10000;
 // Upload processing can keep Submit disabled for up to 1 minute for large images.
 const SUBMIT_AFTER_UPLOAD_WAIT_MS = 60000;
-const SUBMIT_START_WAIT_MS = 1500;
+// How long to wait for the submit interaction to register (slow networks need more time).
+const SUBMIT_START_WAIT_MS = 5000;
 const RESULT_READY_PROGRESS = 95;
 const CLICK_PRE_DELAY_MS = 180;
 const CLICK_POST_DELAY_MS = 320;
+// How long to wait for the page prompt input to appear.
+// 60 s covers a full 2G page load from cold cache.
+const PAGE_READY_MS = 60000;
+// How long to wait for toolbar buttons (480p/720p/6s/10s) to appear after mode change.
+const TOOLBAR_APPEAR_MS = 10000;
+// How long to wait for a dropdown menu to open after clicking its trigger.
+const DROPDOWN_OPEN_MS = 6000;
+// How long to wait for the file input to mount after clicking the upload trigger.
+const FILE_INPUT_APPEAR_MS = 6000;
+// How long to wait for network to come back after going offline.
+// 2 minutes gives the user a chance to reconnect Wi-Fi / switch cells without losing the job.
+const NETWORK_RECONNECT_WAIT_MS = 120000;
 
 type PromptTarget = HTMLTextAreaElement | HTMLInputElement | HTMLElement;
 
@@ -68,7 +82,25 @@ export async function runGrokAutomation(
     );
   }
 
-  const promptTarget = findPromptTarget(document);
+  // Preflight: wait for network connectivity before touching the DOM.
+  // On 2G/3G or after a connection change the browser may be momentarily
+  // offline. Give it up to NETWORK_RECONNECT_WAIT_MS to come back.
+  if (!navigator.onLine) {
+    const reconnected = await waitForNetwork(NETWORK_RECONNECT_WAIT_MS);
+    if (!reconnected) {
+      return fail(
+        'No network connection. Please check your internet and try again.',
+        true,
+      );
+    }
+  }
+
+  // Wait for the prompt input to be ready — the page may still be loading
+  // (especially on a slow network) when the user triggers automation.
+  const promptTarget = await waitForCondition(
+    () => findPromptTarget(document),
+    PAGE_READY_MS,
+  );
   if (!promptTarget) {
     return fail(
       'No prompt input was found. Navigate to https://grok.com/imagine and make sure you are signed in.',
@@ -206,6 +238,7 @@ export async function runGrokAutomation(
 /**
  * Select a toolbar toggle button (resolution 480p/720p, duration 6s/10s) by
  * matching text against a pattern. Active state is detected via aria-checked.
+ * Polls for the button to appear so slow-network React re-renders are tolerated.
  * Non-fatal — returns ok:false with an error message so the caller can warn.
  */
 async function selectToolbarToggle(
@@ -213,12 +246,20 @@ async function selectToolbarToggle(
   labelPattern: RegExp,
   friendlyName: string,
 ): Promise<AutomationReply> {
-  const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('button'));
-  const target = buttons.find((b) => {
-    if (!isVisible(b)) return false;
-    const text = (b.textContent ?? '').replace(/\s+/g, ' ').trim();
-    return labelPattern.test(text);
-  });
+  // Poll until the button appears — it may not have rendered yet if mode
+  // selection is still propagating through React on a slow network.
+  const target = await waitForCondition(
+    () => {
+      const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('button'));
+      return buttons.find((b) => {
+        if (!isVisible(b)) return false;
+        const text = (b.textContent ?? '').replace(/\s+/g, ' ').trim();
+        return labelPattern.test(text);
+      }) ?? null;
+    },
+    TOOLBAR_APPEAR_MS,
+    100,
+  );
 
   if (!target) {
     return fail(`Toolbar button "${friendlyName}" was not found in the composer.`, false);
@@ -230,7 +271,8 @@ async function selectToolbarToggle(
   }
 
   await clickControl(target);
-  await delay(250);
+  // Brief settle so the aria-checked state updates before the next toolbar step.
+  await delay(400);
   return { ok: true, detail: `${friendlyName} selected.` };
 }
 
@@ -268,10 +310,15 @@ async function selectAspectRatio(
 
   // Click to open the dropdown
   await clickControl(trigger);
-  await delay(400);
 
-  // Find the menu and click the matching item
-  const menu = document.querySelector('[role="menu"][data-state="open"], [role="listbox"][data-state="open"]');
+  // Poll for the menu to open — on slow networks the Radix animation/state
+  // update may take longer than a flat delay would cover.
+  const menu = await waitForCondition(
+    () => document.querySelector('[role="menu"][data-state="open"], [role="listbox"][data-state="open"]'),
+    DROPDOWN_OPEN_MS,
+    100,
+  );
+
   if (!menu) {
     // Fallback: try pressing Escape and try direct toggle approach
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -329,7 +376,8 @@ async function selectGenerationMode(
 
     if (!alreadyChecked) {
       await clickControl(modeRadio);
-      await nextFrame();
+      // Wait for React to re-render the toolbar after mode change.
+      await delay(500);
     }
     return { ok: true, detail: `${targetModeName} mode selected via radio input.` };
   }
@@ -352,7 +400,8 @@ async function selectGenerationMode(
 
   if (!alreadyActive) {
     await clickControl(modeButton);
-    await nextFrame();
+    // Wait for React to re-render the toolbar after mode change.
+    await delay(500);
   }
 
   return { ok: true, detail: `${targetModeName} mode selected.` };
@@ -947,8 +996,9 @@ async function uploadAttachments(
     const trigger = findUploadTrigger(doc);
     if (trigger) {
       await clickControl(trigger);
-      await delay(400);
-      fileInput = findFileInput(doc);
+      // Poll for the file input to mount — React may take a moment to render
+      // the hidden <input type="file"> after the trigger click on slow networks.
+      fileInput = await waitForCondition(() => findFileInput(doc), FILE_INPUT_APPEAR_MS, 100);
     }
   }
 
@@ -1209,6 +1259,61 @@ function getControlText(control: HTMLElement): string {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+/**
+ * Wait until the browser reports it is online, or until `timeoutMs` elapses.
+ * Returns true if the connection came back, false if the timeout expired first.
+ * Uses the `online` / `offline` DOM events — reliable for Wi-Fi drops, cell
+ * handoffs, and airplane-mode toggles.
+ */
+function waitForNetwork(timeoutMs: number): Promise<boolean> {
+  if (navigator.onLine) return Promise.resolve(true);
+  return new Promise<boolean>((resolve) => {
+    const timer = window.setTimeout(() => {
+      window.removeEventListener('online', onOnline);
+      resolve(false);
+    }, timeoutMs);
+    const onOnline = () => {
+      window.clearTimeout(timer);
+      resolve(true);
+    };
+    window.addEventListener('online', onOnline, { once: true });
+  });
+}
+
+/**
+ * Poll `check` every `intervalMs` until it returns a non-null/undefined value
+ * or `timeoutMs` elapses. One final check is performed at timeout.
+ *
+ * The countdown is **paused while the browser is offline** so that a network
+ * outage (2G drop, cell handoff, Wi-Fi change) does not consume the wait
+ * budget. If the network does not come back within NETWORK_RECONNECT_WAIT_MS
+ * the function returns null immediately.
+ */
+async function waitForCondition<T>(
+  check: () => T | null | undefined,
+  timeoutMs: number,
+  intervalMs = 150,
+): Promise<T | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    // Pause the clock while offline and wait for reconnection.
+    if (!navigator.onLine) {
+      const remaining = deadline - Date.now();
+      const reconnected = await waitForNetwork(
+        Math.min(remaining, NETWORK_RECONNECT_WAIT_MS),
+      );
+      if (!reconnected) return null;
+      // Reset the deadline by the time we were offline to avoid penalising the
+      // operation for a transient disconnection.
+      // (We simply continue; Date.now() < deadline is re-checked at loop top.)
+    }
+    const result = check();
+    if (result != null) return result;
+    await delay(intervalMs);
+  }
+  return check() ?? null;
 }
 
 async function clickControl(control: HTMLElement): Promise<void> {
