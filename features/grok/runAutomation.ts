@@ -46,8 +46,8 @@ const SUBMIT_ENABLE_WAIT_MS = 4000;
 const POST_UPLOAD_SETTLE_MS = 800;
 // Max time to wait for Submit to go *disabled* after upload (confirms processing started)
 const UPLOAD_DISABLE_WAIT_MS = 3000;
-// Upload processing can keep Submit disabled for several more seconds.
-const SUBMIT_AFTER_UPLOAD_WAIT_MS = 15000;
+// Upload processing can keep Submit disabled for up to 1 minute for large images.
+const SUBMIT_AFTER_UPLOAD_WAIT_MS = 60000;
 const SUBMIT_START_WAIT_MS = 1500;
 const RESULT_READY_PROGRESS = 95;
 const CLICK_PRE_DELAY_MS = 180;
@@ -131,10 +131,16 @@ export async function runGrokAutomation(
       // Without this, the re-enable poll below finds Submit still enabled from the
       // prompt-fill step and fires submit before the image is processed.
       await waitForSubmitDisabled(document, UPLOAD_DISABLE_WAIT_MS);
-      // Then wait for Submit to re-enable (upload fully processed by Grok).
-      generateControl =
-        (await waitForSubmitEnabled(document, SUBMIT_AFTER_UPLOAD_WAIT_MS)) ??
-        generateControl;
+      // Wait up to 1 minute for Submit to re-enable — image processing can be slow.
+      // If it never re-enables, bail out rather than submitting before upload completes.
+      const uploadedControl = await waitForSubmitEnabled(document, SUBMIT_AFTER_UPLOAD_WAIT_MS);
+      if (!uploadedControl) {
+        return fail(
+          'Submit button did not re-enable after image upload. The image may still be processing or the upload failed. Please try again.',
+          false,
+        );
+      }
+      generateControl = uploadedControl;
     }
 
     const baselineResults = capturePromptResultSnapshot(document, job.prompt);
