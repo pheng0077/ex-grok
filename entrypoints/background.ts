@@ -103,9 +103,14 @@ export default defineBackground(() => {
       return false;
     }
 
+    // Capture jobId synchronously before any async operation so that a
+    // subsequent job starting (and overwriting pendingDownload) cannot cause
+    // the wrong filename to be used.
+    const jobIdForFilename = pendingDownload.jobId;
+
     // Async: read current active job and rename.
     void getAppState().then((state) => {
-      const job = state.queue.find((j) => j.id === pendingDownload?.jobId);
+      const job = state.queue.find((j) => j.id === jobIdForFilename);
       if (!job) return;
       const filename = buildDownloadFilename(job, downloadItem.filename ?? 'video.mp4');
       suggest({ filename, conflictAction: 'uniquify' });
